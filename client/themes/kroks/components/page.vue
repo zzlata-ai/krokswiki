@@ -241,14 +241,16 @@
                   dark
                   )
                   template(v-slot:activator)
-                    v-btn(
+                    v-btn.btn-animate-edit(
                       fab
                       color='primary'
                       v-model='pageEditFab'
+                      @click='pageEdit'
                       v-on='onEditActivator'
-                      aria-label='Меню страницы'
+                      :disabled='!hasWritePagesPermission'
+                      :aria-label='$t(`common:page.editPage`)'
                       )
-                      v-icon mdi-dots-vertical
+                      v-icon mdi-pencil
                   v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasReadHistoryPermission')
                     template(v-slot:activator='{ on }')
                       v-btn(
