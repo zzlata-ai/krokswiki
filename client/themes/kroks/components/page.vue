@@ -33,9 +33,6 @@
     v-main(ref='content')
       template(v-if='path !== `home`')
         v-toolbar(:color='$vuetify.theme.dark ? `grey darken-4-d3` : `grey lighten-3`', flat, dense, v-if='$vuetify.breakpoint.smAndUp')
-          //- v-btn.pl-0(v-if='$vuetify.breakpoint.xsOnly', flat, @click='toggleNavigation')
-          //-   v-icon(color='grey darken-2', left) menu
-          //-   span Navigation
           v-breadcrumbs.breadcrumbs-nav.pl-0(
             :items='breadcrumbs'
             divider='/'
@@ -92,21 +89,19 @@
             lg3
             xl2
             )
-            v-card.page-toc-card.mb-5(v-if='tocDecoded.length')
+            v-card.page-toc-card.mb-5(v-if='tocDecoded.length && isArticle')
               .overline.pa-5.pb-0(:class='$vuetify.theme.dark ? `blue--text text--lighten-2` : `primary--text`') {{$t('common:page.toc')}}
               v-list.pb-3(dense, nav, :class='$vuetify.theme.dark ? `darken-3-d3` : ``')
                 template(v-for='(tocItem, tocIdx) in tocDecoded')
                   v-list-item(@click='$vuetify.goTo(tocItem.anchor, scrollOpts)')
                     v-icon(color='grey', small) {{ $vuetify.rtl ? `mdi-chevron-left` : `mdi-chevron-right` }}
                     v-list-item-title.px-3 {{tocItem.title}}
-                  //- v-divider(v-if='tocIdx < toc.length - 1 || tocItem.children.length')
                   template(v-for='tocSubItem in tocItem.children')
                     v-list-item(@click='$vuetify.goTo(tocSubItem.anchor, scrollOpts)')
                       v-icon.px-3(color='grey lighten-1', small) {{ $vuetify.rtl ? `mdi-chevron-left` : `mdi-chevron-right` }}
                       v-list-item-title.px-3.caption.grey--text(:class='$vuetify.theme.dark ? `text--lighten-1` : `text--darken-1`') {{tocSubItem.title}}
-                    //- v-divider(inset, v-if='tocIdx < toc.length - 1')
 
-            v-card.page-tags-card.mb-5(v-if='tags.length > 0')
+            v-card.page-tags-card.mb-5(v-if='tags.length > 0 && isArticle')
               .pa-5
                 .overline.teal--text.pb-2(:class='$vuetify.theme.dark ? `text--lighten-3` : ``') {{$t('common:page.tags')}}
                 v-chip.mr-1.mb-1(
@@ -126,43 +121,7 @@
                   )
                   v-icon(:color='$vuetify.theme.dark ? `teal lighten-3` : `teal`', size='20') mdi-tag-multiple
 
-            v-card.page-comments-card.mb-5(v-if='commentsEnabled && commentsPerms.read')
-              .pa-5
-                .overline.pb-2.blue-grey--text.d-flex.align-center(:class='$vuetify.theme.dark ? `text--lighten-3` : `text--darken-2`')
-                  span {{$t('common:comments.sdTitle')}}
-                  //- v-spacer
-                  //- v-chip.text-center(
-                  //-   v-if='!commentsExternal'
-                  //-   label
-                  //-   x-small
-                  //-   :color='$vuetify.theme.dark ? `blue-grey darken-3` : `blue-grey darken-2`'
-                  //-   dark
-                  //-   style='min-width: 50px; justify-content: center;'
-                  //-   )
-                  //-   span {{commentsCount}}
-                .d-flex
-                  v-btn.text-none(
-                    @click='goToComments()'
-                    :color='$vuetify.theme.dark ? `blue-grey` : `blue-grey darken-2`'
-                    outlined
-                    style='flex: 1 1 100%;'
-                    small
-                    )
-                    span.blue-grey--text(:class='$vuetify.theme.dark ? `text--lighten-1` : `text--darken-2`') {{$t('common:comments.viewDiscussion')}}
-                  v-tooltip(right, v-if='commentsPerms.write')
-                    template(v-slot:activator='{ on }')
-                      v-btn.ml-2(
-                        @click='goToComments(true)'
-                        v-on='on'
-                        outlined
-                        small
-                        :color='$vuetify.theme.dark ? `blue-grey` : `blue-grey darken-2`'
-                        :aria-label='$t(`common:comments.newComment`)'
-                        )
-                        v-icon(:color='$vuetify.theme.dark ? `blue-grey lighten-1` : `blue-grey darken-2`', dense) mdi-comment-plus
-                    span {{$t('common:comments.newComment')}}
-
-            v-card.page-author-card.mb-5
+            v-card.page-author-card.mb-5(v-if='isArticle')
               .pa-5
                 .overline.indigo--text.d-flex(:class='$vuetify.theme.dark ? `text--lighten-3` : ``')
                   span {{$t('common:page.lastEditedBy')}}
@@ -182,26 +141,9 @@
                 .page-author-card-name.body-2.grey--text(:class='$vuetify.theme.dark ? `` : `text--darken-3`') {{ authorName }}
                 .page-author-card-date.caption.grey--text.text--darken-1 {{ updatedAt | moment('calendar') }}
 
-            //- v-card.mb-5
-            //-   .pa-5
-            //-     .overline.pb-2.yellow--text(:class='$vuetify.theme.dark ? `text--darken-3` : `text--darken-4`') Rating
-            //-     .text-center
-            //-       v-rating(
-            //-         v-model='rating'
-            //-         color='yellow darken-3'
-            //-         background-color='grey lighten-1'
-            //-         half-increments
-            //-         hover
-            //-       )
-            //-       .caption.grey--text 5 votes
-
-            v-card.page-shortcuts-card(flat)
+            v-card.page-shortcuts-card(flat, v-if='isArticle')
               v-toolbar(:color='$vuetify.theme.dark ? `grey darken-4-d3` : `grey lighten-3`', flat, dense)
                 v-spacer
-                //- v-tooltip(bottom)
-                //-   template(v-slot:activator='{ on }')
-                //-     v-btn(icon, tile, v-on='on', :aria-label='$t(`common:page.bookmark`)'): v-icon(color='grey') mdi-bookmark
-                //-   span {{$t('common:page.bookmark')}}
                 v-menu(offset-y, bottom, min-width='300')
                   template(v-slot:activator='{ on: menu }')
                     v-tooltip(bottom)
@@ -227,113 +169,148 @@
             :order-xs1='tocPosition === `right`'
             :order-xs2='tocPosition !== `right`'
             )
-            v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasAnyPagePermissions && editShortcutsObj.editFab')
-              template(v-slot:activator='{ on: onEditActivator }')
-                v-speed-dial(
-                  v-model='pageEditFab'
-                  direction='top'
-                  open-on-hover
-                  transition='scale-transition'
-                  bottom
-                  :right='!$vuetify.rtl'
-                  :left='$vuetify.rtl'
-                  fixed
-                  dark
-                  )
-                  template(v-slot:activator)
-                    v-btn.btn-animate-edit(
-                      fab
-                      color='primary'
-                      v-model='pageEditFab'
-                      @click='pageEdit'
-                      v-on='onEditActivator'
-                      :disabled='!hasWritePagesPermission'
-                      :aria-label='$t(`common:page.editPage`)'
+
+            <!-- === ЛОГИКА РАЗДЕЛА (ДАННЫЕ С БЭКЕНДА) === -->
+            template(v-if='isSectionView')
+              v-card.mb-5.elevation-1
+                v-card-title.headline
+                  v-icon.mr-3(color='orange') mdi-folder-open
+                  span Раздел: {{ sectionTitle }}
+                v-card-text
+                  p.grey--text.mb-4 Выберите подраздел или статью из списка:
+
+                  v-list(two-line, rounded, tile)
+                    template(v-for='(subpage, index) in childPages')
+                      v-list-item(
+                        :key='subpage.path'
+                        :href='`/` + subpage.path'
+                        style='text-decoration: none; color: inherit; border-radius: 8px; margin-bottom: 8px; transition: background 0.2s;'
                       )
-                      v-icon mdi-pencil
-                  v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasReadHistoryPermission')
-                    template(v-slot:activator='{ on }')
-                      v-btn(
+                        v-list-item-avatar
+                          v-icon(:color='subpage.isFolder ? "orange" : "blue"') {{ subpage.isFolder ? "mdi-folder" : "mdi-file-document-outline" }}
+                        v-list-item-content
+                          v-list-item-title(:class='$vuetify.theme.dark ? "white--text" : "grey--text text--darken-4"') {{ subpage.title }}
+                          v-list-item-subtitle {{ subpage.path }}
+                      v-divider(v-if='index < childPages.length - 1')
+
+                  v-alert(v-if='childPages.length === 0', type='info', text, outlined)
+                    | В этом разделе пока нет статей или подразделов.
+
+            <!-- === ЛОГИКА СТАТЬИ === -->
+            template(v-else-if='isArticle')
+              v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasAnyPagePermissions && editShortcutsObj.editFab')
+                template(v-slot:activator='{ on: onEditActivator }')
+                  v-speed-dial(
+                    v-model='pageEditFab'
+                    direction='top'
+                    open-on-hover
+                    transition='scale-transition'
+                    bottom
+                    :right='!$vuetify.rtl'
+                    :left='$vuetify.rtl'
+                    fixed
+                    dark
+                    )
+                    template(v-slot:activator)
+                      v-btn.btn-animate-edit(
                         fab
-                        small
-                        color='white'
-                        light
-                        v-on='on'
-                        @click='pageHistory'
+                        color='primary'
+                        v-model='pageEditFab'
+                        @click='pageEdit'
+                        v-on='onEditActivator'
+                        :disabled='!hasWritePagesPermission'
+                        :aria-label='$t(`common:page.editPage`)'
                         )
-                        v-icon(size='20') mdi-history
-                    span {{$t('common:header.history')}}
-                  v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasReadSourcePermission')
-                    template(v-slot:activator='{ on }')
-                      v-btn(
-                        fab
-                        small
-                        color='white'
-                        light
-                        v-on='on'
-                        @click='pageSource'
-                        )
-                        v-icon(size='20') mdi-code-tags
-                    span {{$t('common:header.viewSource')}}
-                  v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasWritePagesPermission')
-                    template(v-slot:activator='{ on }')
-                      v-btn(
-                        fab
-                        small
-                        color='white'
-                        light
-                        v-on='on'
-                        @click='pageConvert'
-                        )
-                        v-icon(size='20') mdi-lightning-bolt
-                    span {{$t('common:header.convert')}}
-                  v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasWritePagesPermission')
-                    template(v-slot:activator='{ on }')
-                      v-btn(
-                        fab
-                        small
-                        color='white'
-                        light
-                        v-on='on'
-                        @click='pageDuplicate'
-                        )
-                        v-icon(size='20') mdi-content-duplicate
-                    span {{$t('common:header.duplicate')}}
-                  v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasManagePagesPermission')
-                    template(v-slot:activator='{ on }')
-                      v-btn(
-                        fab
-                        small
-                        color='white'
-                        light
-                        v-on='on'
-                        @click='pageMove'
-                        )
-                        v-icon(size='20') mdi-content-save-move-outline
-                    span {{$t('common:header.move')}}
-                  v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasDeletePagesPermission')
-                    template(v-slot:activator='{ on }')
-                      v-btn(
-                        fab
-                        dark
-                        small
-                        color='red'
-                        v-on='on'
-                        @click='pageDelete'
-                        )
-                        v-icon(size='20') mdi-trash-can-outline
-                    span {{$t('common:header.delete')}}
-              span {{$t('common:page.editPage')}}
-            v-alert.mb-5(v-if='!isPublished', color='red', outlined, icon='mdi-minus-circle', dense)
-              .caption {{$t('common:page.unpublishedWarning')}}
-            .contents(ref='container')
-              slot(name='contents')
-            .comments-container#discussion(v-if='commentsEnabled && commentsPerms.read && !printView')
-              .comments-header
-                v-icon.mr-2(dark) mdi-comment-text-outline
-                span {{$t('common:comments.title')}}
-              .comments-main
-                slot(name='comments')
+                        v-icon mdi-pencil
+                    v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasReadHistoryPermission')
+                      template(v-slot:activator='{ on }')
+                        v-btn(
+                          fab
+                          small
+                          color='white'
+                          light
+                          v-on='on'
+                          @click='pageHistory'
+                          )
+                          v-icon(size='20') mdi-history
+                      span {{$t('common:header.history')}}
+                    v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasReadSourcePermission')
+                      template(v-slot:activator='{ on }')
+                        v-btn(
+                          fab
+                          small
+                          color='white'
+                          light
+                          v-on='on'
+                          @click='pageSource'
+                          )
+                          v-icon(size='20') mdi-code-tags
+                      span {{$t('common:header.viewSource')}}
+                    v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasWritePagesPermission')
+                      template(v-slot:activator='{ on }')
+                        v-btn(
+                          fab
+                          small
+                          color='white'
+                          light
+                          v-on='on'
+                          @click='pageConvert'
+                          )
+                          v-icon(size='20') mdi-lightning-bolt
+                      span {{$t('common:header.convert')}}
+                    v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasWritePagesPermission')
+                      template(v-slot:activator='{ on }')
+                        v-btn(
+                          fab
+                          small
+                          color='white'
+                          light
+                          v-on='on'
+                          @click='pageDuplicate'
+                          )
+                          v-icon(size='20') mdi-content-duplicate
+                      span {{$t('common:header.duplicate')}}
+                    v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasManagePagesPermission')
+                      template(v-slot:activator='{ on }')
+                        v-btn(
+                          fab
+                          small
+                          color='white'
+                          light
+                          v-on='on'
+                          @click='pageMove'
+                          )
+                          v-icon(size='20') mdi-content-save-move-outline
+                      span {{$t('common:header.move')}}
+                    v-tooltip(:right='$vuetify.rtl', :left='!$vuetify.rtl', v-if='hasDeletePagesPermission')
+                      template(v-slot:activator='{ on }')
+                        v-btn(
+                          fab
+                          dark
+                          small
+                          color='red'
+                          v-on='on'
+                          @click='pageDelete'
+                          )
+                          v-icon(size='20') mdi-trash-can-outline
+                      span {{$t('common:header.delete')}}
+                span {{$t('common:page.editPage')}}
+              v-alert.mb-5(v-if='!isPublished', color='red', outlined, icon='mdi-minus-circle', dense)
+                .caption {{$t('common:page.unpublishedWarning')}}
+              .contents(ref='container')
+                slot(name='contents')
+              .comments-container#discussion(v-if='commentsEnabled && commentsPerms.read && !printView')
+                .comments-header
+                  v-icon.mr-2(dark) mdi-comment-text-outline
+                  span {{$t('common:comments.title')}}
+                .comments-main
+                  slot(name='comments')
+
+            <!-- Если это не статья и не раздел с детьми, показываем стандартную заглушку (на всякий случай) -->
+            template(v-else)
+              v-alert(type='warning', text, outlined)
+                | Страница не найдена и не содержит подразделов.
+
     nav-footer
     notify
     search-results
@@ -491,7 +468,17 @@ export default {
     filename: {
       type: String,
       default: ''
+    },
+    // === НОВЫЕ ПРОПСЫ С БЭКЕНДА ===
+    isSection: {
+      type: Boolean,
+      default: false
+    },
+    childPages: {
+      type: Array,
+      default: () => []
     }
+    // ==============================
   },
   data() {
     return {
@@ -508,7 +495,7 @@ export default {
       scrollStyle: {
         vuescroll: {},
         scrollPanel: {
-          initialScrollX: 0.01, // fix scrollbar not disappearing on load
+          initialScrollX: 0.01,
           scrollingX: false,
           speed: 50
         },
@@ -532,12 +519,8 @@ export default {
     commentsPerms: get('page/effectivePermissions@comments'),
     editShortcutsObj: get('page/editShortcuts'),
     rating: {
-      get () {
-        return 3.5
-      },
-      set (val) {
-
-      }
+      get () { return 3.5 },
+      set (val) {}
     },
     breadcrumbs() {
       return [{ path: '/', name: 'Home' }].concat(
@@ -558,10 +541,18 @@ export default {
       }
     },
     sidebarDecoded () {
-      return JSON.parse(Buffer.from(this.sidebar, 'base64').toString())
+      try {
+        return JSON.parse(Buffer.from(this.sidebar, 'base64').toString())
+      } catch (e) {
+        return []
+      }
     },
     tocDecoded () {
-      return JSON.parse(Buffer.from(this.toc, 'base64').toString())
+      try {
+        return JSON.parse(Buffer.from(this.toc, 'base64').toString())
+      } catch (e) {
+        return []
+      }
     },
     tocPosition: get('site/tocPosition'),
     hasAdminPermission: get('page/effectivePermissions@system.manage'),
@@ -581,7 +572,21 @@ export default {
       } else {
         return ''
       }
+    },
+
+    // === ОБНОВЛЕННЫЕ ВЫЧИСЛЯЕМЫЕ СВОЙСТВА ===
+    isArticle() {
+      return this.pageId > 0
+    },
+    isSectionView() {
+      // Используем пропс с бэкенда или фоллбэк на проверку ID и наличия детей
+      return this.isSection || (this.pageId === 0 && this.childPages && this.childPages.length > 0)
+    },
+    sectionTitle() {
+      const parts = this.path.split('/').filter(Boolean)
+      return parts.length > 0 ? parts[parts.length - 1].replace(/-/g, ' ') : 'Раздел'
     }
+    // =========================================
   },
   created() {
     this.$store.set('page/authorId', this.authorId)
@@ -610,22 +615,18 @@ export default {
       this.scrollStyle.bar.background = '#424242'
     }
 
-    // -> Check side navigation visibility
     this.handleSideNavVisibility()
     window.addEventListener('resize', _.debounce(() => {
       this.handleSideNavVisibility()
     }, 500))
 
-    // -> Highlight Code Blocks
     Prism.highlightAllUnder(this.$refs.container)
 
-    // -> Render Mermaid diagrams
     mermaid.mermaidAPI.initialize({
       startOnLoad: true,
       theme: this.$vuetify.theme.dark ? `dark` : `default`
     })
 
-    // -> Handle anchor scrolling
     if (window.location.hash && window.location.hash.length > 1) {
       if (document.readyState === 'complete') {
         this.$nextTick(() => {
@@ -638,7 +639,6 @@ export default {
       }
     }
 
-    // -> Handle anchor links within the page contents
     this.$nextTick(() => {
       this.$refs.container.querySelectorAll(`a[href^="#"], a[href^="${window.location.href.replace(window.location.hash, '')}#"]`).forEach(el => {
         el.onclick = ev => {
@@ -717,7 +717,6 @@ export default {
 </script>
 
 <style lang="scss">
-
 .breadcrumbs-nav {
   .v-btn {
     min-width: 0;
@@ -796,5 +795,4 @@ export default {
     }
   }
 }
-
 </style>

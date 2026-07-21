@@ -171,12 +171,17 @@ module.exports = {
       }
     },
     async singleByPath(obj, args, context, info) {
+      console.log('=== GRAPHQL singleByPath ВЫЗВАН ===')
+      console.log('Полученные args:', args)
+
       let page = await WIKI.models.pages.getPageFromDb({
         path: args.path,
-        locale: args.locale,
-      });
+        locale: args.locale
+      })
+
       if (page) {
-        if (WIKI.auth.checkAccess(context.req.user, ['manage:pages', 'delete:pages'], {
+        console.log('>>> Страница найдена в БД. ID:', page.id)
+        if (WIKI.auth.checkAccess(context.req.user, ['manage:pages', 'delete:pages', 'read:pages'], {
           path: page.path,
           locale: page.localeCode
         })) {
@@ -191,12 +196,69 @@ module.exports = {
           throw new WIKI.Error.PageViewForbidden()
         }
       } else {
+        console.log('>>> Страница НЕ найдена. Проверяем наличие дочерних элементов...')
+
+        const searchPath = args.path.endsWith('/') ? args.path : args.path + '/'
+        console.log('>>> Ищем в БД по маске path LIKE:', `${searchPath}%`, 'для locale:', args.locale)
+
+        const childPages = await WIKI.models.pages.query()
+          .select('id', 'path', 'title', 'isFolder', 'localeCode')
+          .where('localeCode', args.locale)
+          .andWhere('path', 'like', `${searchPath}%`)
+          .limit(50)
+
+        console.log('>>> Запрос к БД выполнен. Найдено дочерних страниц:', childPages.length)
+
+        if (childPages && childPages.length > 0) {
+          console.log('>>> УСЛОВИЕ ВЫПОЛНЕНО: Возвращаем объект с isSection: true')
+          return {
+            id: 0,
+            path: args.path,
+            hash: '',
+            title: args.path.split('/').pop().replace(/-/g, ' ') || 'Раздел',
+            description: '',
+            isPrivate: false,
+            isPublished: true,
+            privateNS: null,
+            publishStartDate: new Date(),
+            publishEndDate: new Date(),
+            tags: [],
+            content: '',
+            render: '',
+            toc: '',
+            contentType: 'markdown',
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            editor: 'markdown',
+            locale: args.locale,
+            scriptCss: '',
+            scriptJs: '',
+            authorId: 0,
+            authorName: 'System',
+            authorEmail: '',
+            creatorId: 0,
+            creatorName: 'System',
+            creatorEmail: '',
+            isSection: true,
+            childPages: childPages.map(cp => ({
+              id: cp.id,
+              path: cp.path,
+              depth: 0,
+              title: cp.title,
+              isPrivate: false,
+              isFolder: cp.isFolder || false,
+              privateNS: null,
+              parent: 0,
+              pageId: cp.id,
+              locale: cp.localeCode
+            }))
+          }
+        }
+
+        console.log('>>> Дочерних страниц нет. Выбрасываем PageNotFound')
         throw new WIKI.Error.PageNotFound()
       }
     },
-    /**
-     * FETCH TAGS
-     */
     async tags (obj, args, context, info) {
       const pages = await WIKI.models.pages.query()
         .column([
