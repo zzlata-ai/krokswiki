@@ -1,214 +1,239 @@
 <template>
   <div class="custom-wiki-theme">
-    <!-- ========================================== -->
-    <!-- БЛОК 1: ОТОБРАЖЕНИЕ СТАТЬИ                 -->
-    <!-- ========================================== -->
-    <article
-      v-if="isArticle"
-      class="article-view"
-    >
-      <h1 class="article-title">
-        {{ page.title }}
-      </h1>
+    <!-- === ЛОГИКА ГЛАВНОЙ СТРАНИЦЫ === -->
+    <article v-if="isSection" class="section-view">
+      <div class="container">
+        <div class="card">
+          <div class="card-header">
+            <span class="icon">📖</span>
+            <h1>Добро пожаловать в Wiki</h1>
+          </div>
+          <div class="card-content">
+            <p class="subtitle">Выберите раздел из списка ниже:</p>
 
-      <!-- Мета-информация (теги, дата) -->
-      <div
-        class="article-meta"
-        v-if="page.tags && page.tags.length > 0"
-      >
-        Теги:
-        <span
-          v-for="tag in page.tags"
-          :key="tag"
-          class="tag"
-        >
-          {{ tag }}
-        </span>
+            <div class="section-list">
+              <div v-for="(subpage, index) in sectionPages" :key="subpage.path" class="section-item">
+                <a :href="'/' + subpage.path" class="section-link">
+                  <span class="icon">
+                    <span v-if="subpage.isFolder">📁</span>
+                    <span v-else>📄</span>
+                  </span>
+                  <span class="title">{{ subpage.title }}</span>
+                  <span class="path">{{ subpage.path }}</span>
+                </a>
+                <hr v-if="index < sectionPages.length - 1">
+              </div>
+            </div>
+
+            <div v-if="sectionPages.length === 0" class="alert">
+              <p>В этом разделе пока нет статей или подразделов.</p>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <!-- Сам контент статьи (рендерится в HTML на бэкенде) -->
-      <div
-        class="article-body"
-        v-html="page.render || page.content"
-      />
     </article>
 
-    <!-- ========================================== -->
-    <!-- БЛОК 2: ОТОБРАЖЕНИЕ РАЗДЕЛА (ПАПКИ)        -->
-    <!-- ========================================== -->
-    <section
-      v-else-if="isSection"
-      class="section-view"
-    >
-      <h1 class="section-title">
-        Раздел: {{ formatPath(currentPath) }}
-      </h1>
-      <p class="section-description">
-        Выберите подраздел или статью из списка:
-      </p>
-
-      <!-- Список ссылок на дочерние страницы -->
-      <ul
-        class="subpages-list"
-        v-if="subpages.length > 0"
-      >
-        <li
-          v-for="subpage in subpages"
-          :key="subpage.id || subpage.path"
-          class="subpage-item"
-        >
-          <nuxt-link
-            :to="subpage.path"
-            class="subpage-link"
-          >
-            <span class="link-icon">📄</span> <!-- Можно менять иконку в зависимости от того, папка это или статья -->
-            <span class="link-title">{{ subpage.title }}</span>
-            <span class="link-arrow">→</span>
-          </nuxt-link>
-        </li>
-      </ul>
-
-      <!-- Заглушка, если раздел пуст -->
-      <div
-        v-else
-        class="empty-section"
-      >
-        <p>В этом разделе пока нет статей или подразделов.</p>
+    <!-- === СТАНДАРТНЫЙ ЭКРАН === -->
+    <div v-else class="welcome-screen">
+      <div class="container">
+        <h1 class="logo">Wiki.js</h1>
+        <p>Welcome to your wiki!</p>
+        <p>Let's get started and create the home page.</p>
+        <div class="buttons">
+          <a href="/e/en/home" class="btn primary">+ CREATE HOME PAGE</a>
+          <a href="/admin" class="btn secondary"> ADMINISTRATION</a>
+        </div>
       </div>
-    </section>
-
-    <!-- Главная страница (опционально) -->
-    <div
-      v-else
-      class="home-view"
-    >
-      <h1>Добро пожаловать в Wiki</h1>
-      <p>Используйте меню слева для навигации.</p>
     </div>
   </div>
 </template>
 
 <script>
 export default {
-  computed: {
-    // Получаем объект текущей страницы из стора Wiki.js
-    page() {
-      return this.$store.state.page
-    },
-
-    // Текущий URL путь
-    currentPath() {
-      return this.$route.path
-    },
-
-    // Проверка: является ли текущая страница статьёй
-    isArticle() {
-      // У статьи в Wiki.js всегда есть уникальный id
-      return this.page && this.page.id
-    },
-
-    // Проверка: является ли текущая страница разделом (папкой)
-    isSection() {
-      // Если это не статья, но мы не на корневой главной странице
-      return !this.isArticle && this.currentPath !== '/'
-    },
-
-    // Получаем список дочерних страниц (подразделов и статей) для раздела
-    subpages() {
-      // Wiki.js автоматически загружает список страниц папки в стор при переходе в неё
-      return this.$store.state.pages || []
+  data() {
+    return {
+      isSection: false,
+      sectionPages: []
     }
   },
-
+  async mounted() {
+    await this.checkIfSection()
+  },
   methods: {
-    // Красивое форматирование пути для заголовка раздела
-    formatPath(path) {
-      if (!path || path === '/') return 'Главная'
-      // Убираем первый слэш и заменяем остальные на пробелы/тире
-      return path.replace(/^\//, '').replace(/\//g, ' / ')
+    async checkIfSection() {
+      try {
+        const response = await fetch('/graphql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query { pages { list(locale: "en", limit: 200) { id path title } } }`
+          })
+        })
+
+        if (response.status === 200) {
+          const result = await response.json()
+
+          if (result.data && result.data.pages && result.data.pages.list) {
+            const allPages = result.data.pages.list
+            // Фильтруем только разделы верхнего уровня
+            const topLevelPages = allPages.filter(p => {
+              const pathParts = p.path.split('/')
+              return pathParts.length === 1 && p.path !== 'home'
+            })
+
+            if (topLevelPages.length > 0) {
+              this.isSection = true
+              this.sectionPages = topLevelPages.map(p => ({
+                title: p.title || p.path,
+                path: p.path,
+                isFolder: false
+              }))
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Ошибка при проверке разделов:', e)
+      }
     }
   }
 }
 </script>
 
 <style scoped>
-/* === Стили для Статьи === */
-.article-view {
-  max-width: 800px;
-  margin: 0 auto;
+.custom-wiki-theme {
+  min-height: 100vh;
   padding: 20px;
-  line-height: 1.6;
-}
-.article-title {
-  border-bottom: 2px solid #eee;
-  padding-bottom: 10px;
-  margin-bottom: 20px;
-}
-.article-meta {
-  margin-bottom: 20px;
-  color: #666;
-  font-size: 0.9em;
-}
-.tag {
-  background: #f0f0f0;
-  padding: 2px 8px;
-  border-radius: 4px;
-  margin-right: 5px;
 }
 
-/* === Стили для Раздела === */
-.section-view {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-.section-title {
-  color: #2c3e50;
-  margin-bottom: 10px;
-}
-.subpages-list {
-  list-style: none;
-  padding: 0;
-  margin-top: 20px;
-}
-.subpage-item {
-  margin-bottom: 10px;
-}
-.subpage-link {
+.section-view, .welcome-screen {
   display: flex;
   align-items: center;
-  padding: 15px 20px;
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
+  justify-content: center;
+  min-height: 80vh;
+}
+
+.container {
+  max-width: 800px;
+  width: 100%;
+}
+
+.card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.card-header {
+  padding: 20px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-header h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.card-content {
+  padding: 20px;
+}
+
+.subtitle {
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.section-list {
+  margin-top: 20px;
+}
+
+.section-item {
+  margin-bottom: 10px;
+}
+
+.section-link {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  background: #f5f5f5;
   border-radius: 8px;
   text-decoration: none;
-  color: #333;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  color: inherit;
+  transition: all 0.2s;
 }
-.subpage-link:hover {
-  background: #f9f9f9;
-  border-color: #3498db;
+
+.section-link:hover {
+  background: #e0e0e0;
   transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.05);
 }
-.link-icon {
-  margin-right: 15px;
-  font-size: 1.2em;
+
+.icon {
+  font-size: 24px;
 }
-.link-title {
-  flex-grow: 1;
+
+.title {
+  flex: 1;
   font-weight: 500;
 }
-.link-arrow {
-  color: #3498db;
-  font-weight: bold;
+
+.path {
+  color: #999;
+  font-size: 14px;
 }
-.empty-section {
-  text-align: center;
-  color: #888;
-  padding: 40px;
-  background: #f9f9f9;
+
+hr {
+  border: none;
+  border-top: 1px solid #e0e0e0;
+  margin: 10px 0;
+}
+
+.alert {
+  padding: 20px;
+  background: #e3f2fd;
   border-radius: 8px;
+  text-align: center;
+  color: #1976d2;
+}
+
+.logo {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.buttons {
+  display: flex;
+  gap: 15px;
+  margin-top: 30px;
+  justify-content: center;
+}
+
+.btn {
+  padding: 12px 24px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn.primary {
+  background: #2196f3;
+  color: white;
+}
+
+.btn.primary:hover {
+  background: #1976d2;
+}
+
+.btn.secondary {
+  background: transparent;
+  color: #2196f3;
+  border: 2px solid #2196f3;
+}
+
+.btn.secondary:hover {
+  background: #e3f2fd;
 }
 </style>
