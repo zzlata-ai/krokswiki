@@ -546,14 +546,26 @@ export default {
       set (val) {}
     },
     breadcrumbs() {
-      return [{ path: '/', name: 'Home' }].concat(
-        _.reduce(this.path.split('/'), (result, value) => {
-          result.push({
-            path: _.get(_.last(result), 'path', this.locales.length > 0 ? `/${this.locale}` : '') + `/${value}`,
-            name: value
-          })
-          return result
-        }, []))
+      const baseBreadcrumb = { path: '/', name: 'Home' }
+
+      const pathBreadcrumbs = _.reduce(this.path.split('/'), (result, value) => {
+        const previousPath = _.get(_.last(result), 'path', this.locales.length > 0 ? `/${this.locale}` : '')
+        const currentPath = previousPath + `/${value}`
+
+        // Ищем страницу с таким путём в allPages
+        const page = this.allPages.find(p => p.path === currentPath || p.path === currentPath.replace(/^\//, ''))
+
+        // Если нашли страницу - берем её title, иначе используем slug
+        const title = page ? page.title : value
+
+        result.push({
+          path: currentPath,
+          name: title
+        })
+        return result
+      }, [])
+
+      return [baseBreadcrumb].concat(pathBreadcrumbs)
     },
     pageUrl () { return window.location.href },
     upBtnPosition () {
