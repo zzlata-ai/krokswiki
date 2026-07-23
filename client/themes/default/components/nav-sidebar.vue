@@ -1,238 +1,247 @@
 <template lang="pug">
-  div
-    .pa-3.d-flex(v-if='navMode === `MIXED`', :class='$vuetify.theme.dark ? `grey darken-5` : `blue darken-3`')
-      v-btn(
-        depressed
-        :color='$vuetify.theme.dark ? `grey darken-4` : `blue darken-2`'
-        style='min-width:0;'
-        @click='goHome'
-        :aria-label='$t(`common:header.home`)'
-        )
-        v-icon(size='20') mdi-home
-      v-btn.ml-3(
-        v-if='currentMode === `custom`'
-        depressed
-        :color='$vuetify.theme.dark ? `grey darken-4` : `blue darken-2`'
-        style='flex: 1 1 100%;'
-        @click='switchMode(`browse`)'
-        )
-        v-icon(left) mdi-file-tree
-        .body-2.text-none {{$t('common:sidebar.browse')}}
-      v-btn.ml-3(
-        v-else-if='currentMode === `browse`'
-        depressed
-        :color='$vuetify.theme.dark ? `grey darken-4` : `blue darken-2`'
-        style='flex: 1 1 100%;'
-        @click='switchMode(`custom`)'
-        )
-        v-icon(left) mdi-navigation
-        .body-2.text-none {{$t('common:sidebar.mainMenu')}}
-    v-divider
-    //-> Custom Navigation
-    v-list.py-2(v-if='currentMode === `custom`', dense, :class='color', :dark='dark')
-      template(v-for='item of items')
-        v-list-item(
-          v-if='item.k === `link`'
-          :href='item.t'
-          :target='item.y === `externalblank` ? `_blank` : `_self`'
-          :rel='item.y === `externalblank` ? `noopener` : ``'
-          )
-          v-list-item-avatar(size='24', tile)
-            v-icon(v-if='item.c.match(/fa[a-z] fa-/)', size='19') {{ item.c }}
-            v-icon(v-else) {{ item.c }}
-          v-list-item-title {{ item.l }}
-        v-divider.my-2(v-else-if='item.k === `divider`')
-        v-subheader.pl-4(v-else-if='item.k === `header`') {{ item.l }}
-    //-> Browse
-    v-list.py-2(v-else-if='currentMode === `browse`', dense, :class='color', :dark='dark')
-      template(v-if='currentParent.id > 0')
-        v-list-item(v-for='(item, idx) of parents', :key='`parent-` + item.id', @click='fetchBrowseItems(item)', style='min-height: 30px;')
-          v-list-item-avatar(size='18', :style='`padding-left: ` + (idx * 8) + `px; width: auto; margin: 0 5px 0 0;`')
-            v-icon(small) mdi-folder-open
-          v-list-item-title {{ item.title }}
-        v-divider.mt-2
-        v-list-item.mt-2(v-if='currentParent.pageId > 0', :href='`/` + currentParent.locale + `/` + currentParent.path', :key='`directorypage-` + currentParent.id', :input-value='path === currentParent.path')
-          v-list-item-avatar(size='24')
-            v-icon mdi-text-box
-          v-list-item-title {{ currentParent.title }}
-        v-subheader.pl-4 {{$t('common:sidebar.currentDirectory')}}
-      template(v-for='item of currentItems')
-        v-list-item(v-if='item.isFolder', :key='`childfolder-` + item.id', @click='fetchBrowseItems(item)')
-          v-list-item-avatar(size='24')
-            v-icon mdi-folder
-          v-list-item-title {{ item.title }}
-        v-list-item(v-else, :href='`/` + item.locale + `/` + item.path', :key='`childpage-` + item.id', :input-value='path === item.path')
-          v-list-item-avatar(size='24')
-            v-icon mdi-text-box
-          v-list-item-title {{ item.title }}
+  v-list.nav-sidebar(nav, :color='color', expand)
+    nav-tree-item(
+      v-for='node in globalNavTree'
+      :key='node.path'
+      :node='node'
+      :depth='0'
+      :current-path='currentPath'
+    )
 </template>
 
 <script>
-import _ from 'lodash'
-import gql from 'graphql-tag'
-import { get } from 'vuex-pathify'
-
-/* global siteLangs */
+import NavTreeItem from './nav-tree-item.vue'
 
 export default {
+  components: {
+    NavTreeItem
+  },
   props: {
-    color: {
-      type: String,
-      default: 'primary'
-    },
-    dark: {
-      type: Boolean,
-      default: true
-    },
     items: {
       type: Array,
       default: () => []
     },
-    navMode: {
+    color: {
       type: String,
-      default: 'MIXED'
+      default: 'white'
     }
   },
   data() {
     return {
-      currentMode: 'custom',
-      currentItems: [],
-      currentParent: {
-        id: 0,
-        title: '/ (root)'
-      },
-      parents: [],
-      loadedCache: []
+      globalNavTree: [],
+      currentPath: window.location.pathname
     }
   },
-  computed: {
-    path: get('page/path'),
-    locale: get('page/locale')
+  async created() {
+    await this.buildGlobalTree()
   },
   methods: {
-    switchMode (mode) {
-      this.currentMode = mode
-      window.localStorage.setItem('navPref', mode)
-      if (mode === `browse` && this.loadedCache.length < 1) {
-        this.loadFromCurrentPath()
+    async buildGlobalTree() {
+      try {
+        const response = await fetch('/graphql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query GetPages {
+              pages {
+                list(limit: 5000) {
+                  id
+                  path
+                  title
+                }
+              }
+            }`
+          })
+        })
+
+        if (!response.ok) {
+          throw new Error(`GraphQL error: ${response.status}`)
+        }
+
+        const result = await response.json()
+        if (result.errors) {
+          throw new Error('GraphQL errors')
+        }
+
+        const allPages = result.data?.pages?.list || []
+        this.globalNavTree = this.buildTreeStructure(allPages)
+      } catch (e) {
+        console.error('Ошибка при построении дерева навигации:', e)
+        this.globalNavTree = this.items
       }
     },
-    async fetchBrowseItems (item) {
-      this.$store.commit(`loadingStart`, 'browse-load')
-      if (!item) {
-        item = this.currentParent
-      }
 
-      if (this.loadedCache.indexOf(item.id) < 0) {
-        this.currentItems = []
-      }
+    buildTreeStructure(pages) {
+      const map = {}
+      const tree = []
 
-      if (item.id === 0) {
-        this.parents = []
-      } else {
-        const flushRightIndex = _.findIndex(this.parents, ['id', item.id])
-        if (flushRightIndex >= 0) {
-          this.parents = _.take(this.parents, flushRightIndex)
-        }
-        if (this.parents.length < 1) {
-          this.parents.push(this.currentParent)
-        }
-        this.parents.push(item)
-      }
+      pages.forEach(page => {
+        if (!page.path || page.path === '/') return
 
-      this.currentParent = item
+        const parts = page.path.split('/').filter(Boolean)
+        let currentPath = ''
 
-      const resp = await this.$apollo.query({
-        query: gql`
-          query ($parent: Int, $locale: String!) {
-            pages {
-              tree(parent: $parent, mode: ALL, locale: $locale) {
-                id
-                path
-                title
-                isFolder
-                pageId
-                parent
-                locale
-              }
+        parts.forEach((part, index) => {
+          currentPath += '/' + part
+
+          if (!map[currentPath]) {
+            const isLast = index === parts.length - 1
+            map[currentPath] = {
+              path: currentPath,
+              title: isLast ? page.title : this.formatTitle(part),
+              children: []
             }
           }
-        `,
-        fetchPolicy: 'cache-first',
-        variables: {
-          parent: item.id,
-          locale: this.locale
-        }
+        })
       })
-      this.loadedCache = _.union(this.loadedCache, [item.id])
-      this.currentItems = _.get(resp, 'data.pages.tree', [])
-      this.$store.commit(`loadingStop`, 'browse-load')
-    },
-    async loadFromCurrentPath() {
-      this.$store.commit(`loadingStart`, 'browse-load')
-      const resp = await this.$apollo.query({
-        query: gql`
-          query ($path: String, $locale: String!) {
-            pages {
-              tree(path: $path, mode: ALL, locale: $locale, includeAncestors: true) {
-                id
-                path
-                title
-                isFolder
-                pageId
-                parent
-                locale
-              }
-            }
+
+      Object.values(map).forEach(node => {
+        const parts = node.path.split('/').filter(Boolean)
+        if (parts.length === 1) {
+          tree.push(node)
+        } else {
+          const parentPath = '/' + parts.slice(0, -1).join('/')
+          if (map[parentPath]) {
+            map[parentPath].children.push(node)
+          } else {
+            tree.push(node)
           }
-        `,
-        fetchPolicy: 'cache-first',
-        variables: {
-          path: this.path,
-          locale: this.locale
         }
       })
-      const items = _.get(resp, 'data.pages.tree', [])
-      const curPage = _.find(items, ['pageId', this.$store.get('page/id')])
-      if (!curPage) {
-        console.warn('Could not find current page in page tree listing!')
-        return
+
+      Object.values(map).forEach(node => {
+        node.isFolder = node.children && node.children.length > 0
+      })
+
+      const sortNodes = (nodes) => {
+        nodes.sort((a, b) => {
+          if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1
+          return a.title.localeCompare(b.title, 'ru')
+        })
+        nodes.forEach(node => {
+          if (node.children && node.children.length > 0) {
+            sortNodes(node.children)
+          }
+        })
       }
 
-      let curParentId = curPage.parent
-      let invertedAncestors = []
-      while (curParentId) {
-        const curParent = _.find(items, ['id', curParentId])
-        if (!curParent) {
-          break
-        }
-        invertedAncestors.push(curParent)
-        curParentId = curParent.parent
-      }
-
-      this.parents = [this.currentParent, ...invertedAncestors.reverse()]
-      this.currentParent = _.last(this.parents)
-
-      this.loadedCache = [curPage.parent]
-      this.currentItems = _.filter(items, ['parent', curPage.parent])
-      this.$store.commit(`loadingStop`, 'browse-load')
+      sortNodes(tree)
+      return tree
     },
-    goHome () {
-      window.location.assign(siteLangs.length > 0 ? `/${this.locale}/home` : '/')
-    }
-  },
-  mounted () {
-    this.currentParent.title = `/ ${this.$t('common:sidebar.root')}`
-    if (this.navMode === 'TREE') {
-      this.currentMode = 'browse'
-    } else if (this.navMode === 'STATIC') {
-      this.currentMode = 'custom'
-    } else {
-      this.currentMode = window.localStorage.getItem('navPref') || 'custom'
-    }
-    if (this.currentMode === 'browse') {
-      this.loadFromCurrentPath()
+
+    formatTitle(slug) {
+      return slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
     }
   }
 }
 </script>
+
+<style lang="scss">
+/* Стили для светлой темы */
+.theme--light .nav-sidebar, html body .theme--light .v-application--wrap nav {
+  background-color: #ffffff !important;
+  border-right: 1px solid #e0e0e0 !important;
+
+  .v-list-item {
+    padding: 12px 16px !important;
+    border-radius: 4px !important;
+    background-color: transparent !important;
+
+    &:hover {
+      background-color: #F5F9FF !important;
+    }
+  }
+
+  .v-list-item__title {
+    color: #1976D2 !important;
+    font-weight: 400 !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.3;
+    word-wrap: break-word;
+  }
+
+  .v-list-item--active {
+    background-color: #E3F2FD !important;
+
+    .v-list-item__title {
+      color: #0D47A1 !important;
+      font-weight: 600 !important;
+    }
+  }
+
+  .v-list-group--active > .v-list-group__header {
+    background-color: #E3F2FD !important;
+
+    .v-list-item__title {
+      color: #0D47A1 !important;
+      font-weight: 600 !important;
+    }
+  }
+
+  .v-list-group__header {
+    cursor: pointer;
+    background-color: transparent !important;
+
+    .v-list-item__title {
+      color: #1976D2 !important;
+    }
+  }
+}
+
+/* Стили для темной темы */
+.theme--dark .nav-sidebar {
+  .v-list-item {
+    padding: 12px 16px !important;
+  }
+
+  .v-list-group--active > .v-list-group__header {
+    background-color: rgba(255, 255, 255, 0.08);
+    .v-list-item__title {
+      font-weight: 600;
+    }
+  }
+  .v-list-item--active {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+    .v-list-item__title {
+      font-weight: 600;
+    }
+  }
+  .v-list-group__items {
+    transition: all 0.2s ease;
+  }
+}
+
+/* Общие стили */
+.nav-sidebar {
+  background-color: #ffffff !important;
+
+  .v-list-item__title {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    line-height: 1.3;
+    word-wrap: break-word;
+  }
+
+  .v-list-group__items {
+    transition: all 0.2s ease;
+  }
+
+  .v-list-group--sub-group {
+    .v-list-group__header {
+      padding-left: 16px !important;
+    }
+    .v-list-group__items .v-list-item {
+      padding-left: 24px !important;
+    }
+  }
+
+  /* Скрываем встроенные иконки Vuetify */
+  .v-list-group__header__append-icon,
+  .v-list-group__header__prepend-icon {
+    display: none !important;
+  }
+}
+</style>
