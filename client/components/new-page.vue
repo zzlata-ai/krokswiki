@@ -35,16 +35,35 @@
         img.animated.fadeIn(src='/_assets/svg/icon-delete-file.svg', alt='Not Found')
         .headline {{ $t('newpage.title') }}
         .subtitle-1.mt-3 {{ $t('newpage.subtitle') }}
-        v-btn.mt-5(:href='`/e/` + locale + `/` + path', x-large)
+
+        v-btn.mt-5(:href='`/e/` + locale + "/" + path', x-large)
           v-icon(left) mdi-plus
           span {{ $t('newpage.create') }}
+
         v-btn.mt-5(color='purple lighten-3', href='javascript:window.history.go(-1);', outlined)
           v-icon(left) mdi-arrow-left
           span {{ $t('newpage.goback') }}
+
+    // ==========================================================
+    // === ГАРАНТИРОВАННАЯ HTML ИНЪЕКЦИЯ (Body) ===
+    // Размещена вне всех v-if / v-else, чтобы рендериться ВСЕГДА
+    // ==========================================================
+
+    // 1. Основной блок инъекции (отобразится, только если в injectBody есть текст)
+    div(v-if='injectBody', v-html='injectBody')
+
+    // === ФУТЕР ===
+    Footer
 </template>
 
 <script>
+import Footer from '../components/Footer.vue'
+
 export default {
+  components: {
+    Footer
+  },
+
   props: {
     locale: {
       type: String,
@@ -67,6 +86,20 @@ export default {
     sectionTitle() {
       const parts = this.path.split('/').filter(Boolean)
       return parts.length > 0 ? parts[parts.length - 1].replace(/-/g, ' ') : 'Раздел'
+    },
+    injectBody() {
+      // Максимально надежная проверка всех возможных путей в Vuex Store
+      const val =
+        this.$store.state.site?.config?.injectBody ||
+        this.$store.state.config?.injectBody ||
+        this.$store.state.injectBody ||
+        ''
+
+      // 🔍 ОТЛАДКА: Обязательно откройте консоль браузера (F12) и посмотрите вывод
+      console.log('🔍 [new-page.vue] Значение injectBody:', val)
+      console.log('🔍 [new-page.vue] Содержимое store.state:', this.$store.state)
+
+      return val
     }
   },
   async created() {
@@ -75,7 +108,6 @@ export default {
   methods: {
     async checkIfSection() {
       const currentPath = this.path.replace(/^\//, '').replace(/\/$/, '')
-      console.log('Проверка раздела:', currentPath, 'locale:', this.locale)
 
       if (!currentPath || currentPath === 'home') {
         this.isLoading = false
@@ -83,6 +115,7 @@ export default {
       }
 
       try {
+        // Исправлено: добавлены обратные кавычки ` ` для шаблонной строки
         const response = await fetch('/graphql', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -93,12 +126,8 @@ export default {
 
         if (response.status === 200) {
           const result = await response.json()
-
-          if (result.data && result.data.pages && result.data.pages.list) {
+          if (result.data?.pages?.list) {
             this.allPages = result.data.pages.list
-            console.log('Все страницы из API:', this.allPages)
-
-            // Собираем содержимое текущего раздела
             this.collectSectionContent(currentPath)
           }
         } else {
@@ -113,38 +142,28 @@ export default {
 
     collectSectionContent(currentPath) {
       const currentParts = currentPath.split('/').filter(Boolean)
-      const currentLevel = currentParts.length // На каком уровне текущий раздел (1, 2, 3...)
+      const currentLevel = currentParts.length
       const searchPrefix = currentPath + '/'
       const addedPaths = new Set()
       const sectionPagesMap = new Map()
 
-      console.log(`Текущий раздел: ${currentPath}, уровень: ${currentLevel}`)
-
-      // Проходим по всем страницам
       this.allPages.forEach(page => {
         if (!page.path.startsWith(searchPrefix)) return
 
         const cleanPath = page.path.replace(/^\/+/, '')
         const parts = cleanPath.split('/').filter(Boolean)
         const pageLevel = parts.length
-
-        // Нам нужны только прямые потомки текущего раздела
-        // Если текущий раздел на уровне N, то нужны страницы уровня N+1
         const expectedLevel = currentLevel + 1
-
         let targetPath, targetTitle, isFolder
 
         if (pageLevel === expectedLevel) {
-          // Прямой потомок - добавляем как есть
           targetPath = page.path
           targetTitle = page.title || parts[parts.length - 1].replace(/-/g, ' ')
-          isFolder = false // Пока не знаем
+          isFolder = false
         } else if (pageLevel > expectedLevel) {
-          // Глубокая вложенность - добавляем родителя нужного уровня
           const targetParts = parts.slice(0, expectedLevel)
           targetPath = targetParts.join('/')
 
-          // Ищем, есть ли отдельная страница для этого подраздела
           const subSectionPage = this.allPages.find(p => {
             const cleanP = p.path.replace(/^\/+/, '')
             return cleanP === targetPath
@@ -152,14 +171,13 @@ export default {
 
           if (subSectionPage) {
             targetTitle = subSectionPage.title
-            isFolder = true // У этого подраздела есть дочерние страницы
+            isFolder = true
           } else {
             targetTitle = targetParts[targetParts.length - 1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
             isFolder = true
           }
         }
 
-        // Добавляем только если ещё не добавлен
         if (!addedPaths.has(targetPath)) {
           addedPaths.add(targetPath)
           sectionPagesMap.set(targetPath, {
@@ -170,7 +188,6 @@ export default {
         }
       })
 
-      // Проверяем, у каких элементов есть потомки
       sectionPagesMap.forEach((item, path) => {
         const hasChildren = this.allPages.some(p => {
           const cleanP = p.path.replace(/^\/+/, '')
@@ -185,17 +202,13 @@ export default {
         }
       })
 
-      // Преобразуем Map в массив и сортируем
       this.sectionPages = Array.from(sectionPagesMap.values())
       this.sectionPages.sort((a, b) => {
-        // Сначала папки, потом статьи
         if (a.isFolder !== b.isFolder) {
           return a.isFolder ? -1 : 1
         }
         return a.title.localeCompare(b.title, 'ru')
       })
-
-      console.log('✅ Раздел найден! Показываем:', this.sectionPages)
 
       if (this.sectionPages.length > 0) {
         this.isSection = true
@@ -209,5 +222,6 @@ export default {
 .section-view {
   min-height: 100vh;
   padding-top: 64px;
+  padding-bottom: 100px !important; /* Отступ для футера */
 }
 </style>

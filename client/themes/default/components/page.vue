@@ -33,9 +33,6 @@
     v-main(ref='content')
       template(v-if='path !== `home`')
         v-toolbar(:color='$vuetify.theme.dark ? `grey darken-4-d3` : `grey lighten-3`', flat, dense, v-if='$vuetify.breakpoint.smAndUp')
-          //- v-btn.pl-0(v-if='$vuetify.breakpoint.xsOnly', flat, @click='toggleNavigation')
-          //-   v-icon(color='grey darken-2', left) menu
-          //-   span Navigation
           v-breadcrumbs.breadcrumbs-nav.pl-0(
             :items='breadcrumbs'
             divider='/'
@@ -99,12 +96,10 @@
                   v-list-item(@click='$vuetify.goTo(tocItem.anchor, scrollOpts)')
                     v-icon(color='grey', small) {{ $vuetify.rtl ? `mdi-chevron-left` : `mdi-chevron-right` }}
                     v-list-item-title.px-3 {{tocItem.title}}
-                  //- v-divider(v-if='tocIdx < toc.length - 1 || tocItem.children.length')
                   template(v-for='tocSubItem in tocItem.children')
                     v-list-item(@click='$vuetify.goTo(tocSubItem.anchor, scrollOpts)')
                       v-icon.px-3(color='grey lighten-1', small) {{ $vuetify.rtl ? `mdi-chevron-left` : `mdi-chevron-right` }}
                       v-list-item-title.px-3.caption.grey--text(:class='$vuetify.theme.dark ? `text--lighten-1` : `text--darken-1`') {{tocSubItem.title}}
-                    //- v-divider(inset, v-if='tocIdx < toc.length - 1')
 
             v-card.page-tags-card.mb-5(v-if='tags.length > 0')
               .pa-5
@@ -130,16 +125,6 @@
               .pa-5
                 .overline.pb-2.blue-grey--text.d-flex.align-center(:class='$vuetify.theme.dark ? `text--lighten-3` : `text--darken-2`')
                   span {{$t('common:comments.sdTitle')}}
-                  //- v-spacer
-                  //- v-chip.text-center(
-                  //-   v-if='!commentsExternal'
-                  //-   label
-                  //-   x-small
-                  //-   :color='$vuetify.theme.dark ? `blue-grey darken-3` : `blue-grey darken-2`'
-                  //-   dark
-                  //-   style='min-width: 50px; justify-content: center;'
-                  //-   )
-                  //-   span {{commentsCount}}
                 .d-flex
                   v-btn.text-none(
                     @click='goToComments()'
@@ -182,26 +167,9 @@
                 .page-author-card-name.body-2.grey--text(:class='$vuetify.theme.dark ? `` : `text--darken-3`') {{ authorName }}
                 .page-author-card-date.caption.grey--text.text--darken-1 {{ updatedAt | moment('calendar') }}
 
-            //- v-card.mb-5
-            //-   .pa-5
-            //-     .overline.pb-2.yellow--text(:class='$vuetify.theme.dark ? `text--darken-3` : `text--darken-4`') Rating
-            //-     .text-center
-            //-       v-rating(
-            //-         v-model='rating'
-            //-         color='yellow darken-3'
-            //-         background-color='grey lighten-1'
-            //-         half-increments
-            //-         hover
-            //-       )
-            //-       .caption.grey--text 5 votes
-
             v-card.page-shortcuts-card(flat)
               v-toolbar(:color='$vuetify.theme.dark ? `grey darken-4-d3` : `grey lighten-3`', flat, dense)
                 v-spacer
-                //- v-tooltip(bottom)
-                //-   template(v-slot:activator='{ on }')
-                //-     v-btn(icon, tile, v-on='on', :aria-label='$t(`common:page.bookmark`)'): v-icon(color='grey') mdi-bookmark
-                //-   span {{$t('common:page.bookmark')}}
                 v-menu(offset-y, bottom, min-width='300')
                   template(v-slot:activator='{ on: menu }')
                     v-tooltip(bottom)
@@ -332,7 +300,9 @@
                 span {{$t('common:comments.title')}}
               .comments-main
                 slot(name='comments')
+
     nav-footer
+    Footer // <--- ДОБАВЛЕНО: Ваш кастомный футер
     notify
     search-results
     v-fab-transition
@@ -358,6 +328,7 @@
 import { StatusIndicator } from 'vue-status-indicator'
 import Tabset from './tabset.vue'
 import NavSidebar from './nav-sidebar.vue'
+import Footer from '../../../components/Footer.vue' // <--- ДОБАВЛЕНО: Правильный путь к Footer.vue
 import Prism from 'prismjs'
 import mermaid from 'mermaid'
 import { get, sync } from 'vuex-pathify'
@@ -407,7 +378,8 @@ Prism.plugins.toolbar.registerButton('copy-to-clipboard', (env) => {
 export default {
   components: {
     NavSidebar,
-    StatusIndicator
+    StatusIndicator,
+    Footer // <--- ДОБАВЛЕНО: Регистрация компонента
   },
   props: {
     pageId: {
@@ -506,7 +478,7 @@ export default {
       scrollStyle: {
         vuescroll: {},
         scrollPanel: {
-          initialScrollX: 0.01, // fix scrollbar not disappearing on load
+          initialScrollX: 0.01,
           scrollingX: false,
           speed: 50
         },
@@ -533,9 +505,7 @@ export default {
       get () {
         return 3.5
       },
-      set (val) {
-
-      }
+      set (val) {}
     },
     breadcrumbs() {
       return [{ path: '/', name: 'Home' }].concat(
@@ -608,22 +578,18 @@ export default {
       this.scrollStyle.bar.background = '#424242'
     }
 
-    // -> Check side navigation visibility
     this.handleSideNavVisibility()
     window.addEventListener('resize', _.debounce(() => {
       this.handleSideNavVisibility()
     }, 500))
 
-    // -> Highlight Code Blocks
     Prism.highlightAllUnder(this.$refs.container)
 
-    // -> Render Mermaid diagrams
     mermaid.mermaidAPI.initialize({
       startOnLoad: true,
       theme: this.$vuetify.theme.dark ? `dark` : `default`
     })
 
-    // -> Handle anchor scrolling
     if (window.location.hash && window.location.hash.length > 1) {
       if (document.readyState === 'complete') {
         this.$nextTick(() => {
@@ -636,7 +602,6 @@ export default {
       }
     }
 
-    // -> Handle anchor links within the page contents
     this.$nextTick(() => {
       this.$refs.container.querySelectorAll(`a[href^="#"], a[href^="${window.location.href.replace(window.location.hash, '')}#"]`).forEach(el => {
         el.onclick = ev => {
@@ -715,7 +680,6 @@ export default {
 </script>
 
 <style lang="scss">
-
 .breadcrumbs-nav {
   .v-btn {
     min-width: 0;
@@ -794,5 +758,4 @@ export default {
     }
   }
 }
-
 </style>

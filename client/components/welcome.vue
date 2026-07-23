@@ -58,10 +58,19 @@
             | Разделы не найдены.
             br
             | Проверьте консоль браузера (F12) на наличие ошибок.
+
+    // === ФУТЕР ===
+    Footer
 </template>
 
 <script>
+import Footer from '../components/Footer.vue'
+
 export default {
+  components: {
+    Footer
+  },
+
   props: {
     locale: {
       type: String,
@@ -230,6 +239,8 @@ export default {
 .welcome-container {
   max-width: 1200px;
   margin: 0 auto;
+  min-height: 100vh;
+  padding-bottom: 100px;
 }
 
 .section-card {

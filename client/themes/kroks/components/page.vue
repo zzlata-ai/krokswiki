@@ -312,6 +312,7 @@
                 | Страница не найдена и не содержит подразделов.
 
     nav-footer
+    Footer
     notify
     search-results
     v-fab-transition
@@ -337,6 +338,7 @@
 import { StatusIndicator } from 'vue-status-indicator'
 import Tabset from './tabset.vue'
 import NavSidebar from './nav-sidebar.vue'
+import Footer from '../../../components/Footer.vue'
 import Prism from 'prismjs'
 import mermaid from 'mermaid'
 import { get, sync } from 'vuex-pathify'
@@ -386,7 +388,8 @@ Prism.plugins.toolbar.registerButton('copy-to-clipboard', (env) => {
 export default {
   components: {
     NavSidebar,
-    StatusIndicator
+    StatusIndicator,
+    Footer
   },
   props: {
     pageId: {

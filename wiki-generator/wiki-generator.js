@@ -29,26 +29,6 @@ class KroksWikiGenerator {
     return content.replace(regex, '')
   }
 
-  async readSectionMeta(parentFolderPath, folderName) {
-    const metaFilePath = path.join(parentFolderPath, `${folderName}.md`)
-
-    try {
-      const metaContent = await fs.readFile(metaFilePath, 'utf8')
-      const metaParsed = matter(metaContent)
-      return {
-        name: metaParsed.data.name || folderName,
-        img: metaParsed.data.img || null,
-        description: metaParsed.data.description || ''
-      }
-    } catch (e) {
-      return {
-        name: folderName.charAt(0).toUpperCase() + folderName.slice(1),
-        img: null,
-        description: ''
-      }
-    }
-  }
-
   normalizePath(base, sub) {
     if (!sub) return base === '/' ? '/' : base
     const cleanBase = base.replace(/^\/+|\/+$/g, '')
@@ -58,32 +38,6 @@ class KroksWikiGenerator {
 
   isIndexArticle(articlePath, folderName) {
     return articlePath === folderName || articlePath === 'index' || articlePath === 'README'
-  }
-
-  // Картинки на главной странице
-  async getCategoryImage(categoryName) {
-    const uploadedImageUrls = {
-      'Антенны': '/sections/antenny.png',
-      'Приборы': '/sections/pribory.png',
-      'Репитеры': '/sections/repitery.png',
-      'Роутеры': '/sections/routery.png',
-      'antenny': '/sections/antenny.png',
-      'pribory': '/sections/pribory.png',
-      'repitery': '/sections/repitery.png',
-      'routery': '/sections/routery.png',
-      'router': '/sections/routery.png'
-    }
-
-    const relativeUrl = uploadedImageUrls[categoryName] || uploadedImageUrls[categoryName.toLowerCase()]
-
-    if (relativeUrl) {
-      const fullUrl = `${this.wikiUrl}${relativeUrl}`
-      console.log(`     Используем изображение: ${fullUrl}`)
-      return fullUrl
-    }
-
-    console.log(`    Изображение для "${categoryName}" не найдено`)
-    return null
   }
 
   async readMarkdownFiles(folderPath) {
@@ -146,13 +100,9 @@ class KroksWikiGenerator {
         const mdFiles = (await fs.readdir(sectionPath)).filter(f => f.endsWith('.md'))
 
         if (mdFiles.length > 0) {
-          const meta = await this.readSectionMeta(docsFolder, entry.name)
-
           sections.push({
             name: entry.name,
-            displayName: meta.name,
-            img: meta.img,
-            description: meta.description,
+            displayName: entry.name.charAt(0).toUpperCase() + entry.name.slice(1),
             path: sectionPath,
             articleCount: mdFiles.length
           })
@@ -162,40 +112,25 @@ class KroksWikiGenerator {
     return sections
   }
 
-  async getFolderStructure(folderPath, relativePath = '', parentFolderPath = null) {
+  async getFolderStructure(folderPath, relativePath = '') {
     const structure = {
       name: path.basename(folderPath),
       path: folderPath,
       relativePath: relativePath,
       articles: [],
-      subfolders: [],
-      subfolderCards: []
-    }
-
-    if (parentFolderPath) {
-      const meta = await this.readSectionMeta(parentFolderPath, structure.name)
-      structure.displayName = meta.name
-      structure.img = meta.img
-      structure.description = meta.description
+      subfolders: []
     }
 
     const entries = await fs.readdir(folderPath, { withFileTypes: true })
 
     const subfolderNames = new Set()
     for (const entry of entries) {
-      if (entry.name === 'uploads') {
-        continue
-      }
-
-      if (entry.isDirectory()) {
-        subfolderNames.add(entry.name)
-      }
+      if (entry.name === 'uploads') continue
+      if (entry.isDirectory()) subfolderNames.add(entry.name)
     }
 
     for (const entry of entries) {
-      if (entry.name === 'uploads') {
-        continue
-      }
+      if (entry.name === 'uploads') continue
 
       const entryPath = path.join(folderPath, entry.name)
 
@@ -223,55 +158,11 @@ class KroksWikiGenerator {
         }
       } else if (entry.isDirectory()) {
         const subRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name
-        const subStructure = await this.getFolderStructure(entryPath, subRelative, folderPath)
+        const subStructure = await this.getFolderStructure(entryPath, subRelative)
         structure.subfolders.push(subStructure)
-
-        structure.subfolderCards.push({
-          name: subStructure.displayName || subStructure.name,
-          path: subStructure.name,
-          description: subStructure.description || ''
-        })
       }
     }
     return structure
-  }
-
-  generateUnifiedCardsContent(articles, subfolderCards, basePath = '', folderName = '') {
-    const allItems = []
-
-    subfolderCards.forEach(card => {
-      allItems.push({
-        type: 'folder',
-        name: card.name,
-        description: card.description,
-        url: this.normalizePath(basePath, card.path)
-      })
-    })
-
-    articles.forEach(article => {
-      const articlePath = this.isIndexArticle(article.path, folderName) ? '' : article.path
-      allItems.push({
-        type: 'article',
-        name: article.name,
-        description: article.description,
-        url: this.normalizePath(basePath, articlePath)
-      })
-    })
-
-    let content = '\n<div class="cards-grid">\n'
-
-    allItems.forEach(item => {
-      const buttonText = item.type === 'folder' ? 'Перейти в раздел →' : 'Читать статью →'
-
-      content += `\n<div class="card">\n\n`
-      content += `### ${item.name}\n\n`
-      content += `${item.description}\n\n`
-      content += `[${buttonText}](${item.url})\n\n`
-      content += `</div>\n`
-    })
-
-    content += '\n</div>\n'
-    return content
   }
 
   async createPage(pagePath, title, content, description = '', tags = [], locale = 'ru', isPublished = true, isPrivate = false, editor = 'markdown') {
@@ -536,55 +427,30 @@ class KroksWikiGenerator {
     )
   }
 
+  // ИЗМЕНЕНО: Теперь обрабатывает ТОЛЬКО статьи, игнорируя создание страниц разделов
   async processFolderStructure(structure, baseWikiPath, sectionName, locale) {
     let successCount = 0
     let failCount = 0
 
     const folderWikiPath = baseWikiPath
 
-    if (structure.articles.length > 0 || structure.subfolderCards.length > 0) {
-      const title = structure.displayName || structure.name.charAt(0).toUpperCase() + structure.name.slice(1)
+    // 1. Создаем/обновляем только статьи в текущей папке
+    for (const article of structure.articles) {
+      const articlePath = this.isIndexArticle(article.path, structure.name) ? '' : article.path
+      const articleWikiPath = this.normalizePath(folderWikiPath, articlePath)
 
-      console.log(`\n📁 Раздел: ${title}`)
-      console.log(`   Путь: ${structure.path}`)
-      console.log(`   Найдено статей: ${structure.articles.length}`)
-      console.log(`   Найдено подразделов: ${structure.subfolderCards.length}`)
-
-      const fullContent = this.generateUnifiedCardsContent(
-        structure.articles,
-        structure.subfolderCards,
-        folderWikiPath,
-        structure.name
-      )
-
-      const success = await this.createOrUpdatePage(
-        folderWikiPath,
-        title,
-        fullContent,
-        structure.description || `Раздел документации: ${title}`,
-        ['kroks', 'docs', sectionName, structure.name],
+      const articleSuccess = await this.createArticlePage(
+        article,
+        articleWikiPath,
+        sectionName,
         locale
       )
 
-      if (success) successCount++
+      if (articleSuccess) successCount++
       else failCount++
-
-      for (const article of structure.articles) {
-        const articlePath = this.isIndexArticle(article.path, structure.name) ? '' : article.path
-        const articleWikiPath = this.normalizePath(folderWikiPath, articlePath)
-
-        const articleSuccess = await this.createArticlePage(
-          article,
-          articleWikiPath,
-          sectionName,
-          locale
-        )
-
-        if (articleSuccess) successCount++
-        else failCount++
-      }
     }
 
+    // 2. Рекурсивно обрабатываем вложенные папки
     for (const subfolder of structure.subfolders) {
       const subResult = await this.processFolderStructure(
         subfolder,
@@ -601,95 +467,21 @@ class KroksWikiGenerator {
 
   async generateSectionPage(sectionName, sectionPath, baseWikiPath, locale) {
     console.log(`\n═══════════════════════════════════════`)
-    console.log(`  Раздел: ${sectionName}`)
+    console.log(`  Обработка раздела: ${sectionName} (только статьи)`)
     console.log(`═══════════════════════════════════════`)
 
     const docsFolder = path.dirname(sectionPath)
-    const structure = await this.getFolderStructure(sectionPath, sectionName, docsFolder)
+    const structure = await this.getFolderStructure(sectionPath, sectionName)
     const targetWikiPath = this.normalizePath(baseWikiPath, sectionName)
 
     return await this.processFolderStructure(structure, targetWikiPath, sectionName, locale)
   }
 
-  async generateMainIndexPage(sections, baseWikiPath, locale) {
-    const wikiPath = '/home'
-    const title = 'Документация Kroks'
-
-    console.log(`\n Главная страница документации (путь: ${wikiPath})`)
-
-    const docsFolder = process.env.DOCS_FOLDER || path.join(__dirname, 'kroks-docs')
-
-    let content = '\n<div class="cards-grid">\n'
-
-    for (const section of sections) {
-      const sectionPath = path.join(docsFolder, section.name)
-      const sectionUrl = this.normalizePath(baseWikiPath, section.name)
-
-      const structure = await this.getFolderStructure(sectionPath, section.name, docsFolder)
-
-      const sectionImage = await this.getCategoryImage(structure.displayName || section.displayName || section.name)
-      const sectionTitle = structure.displayName || section.displayName || section.name
-
-      content += `<div class="card">\n`
-      content += `<div class="card-content">\n`
-      content += `<div class="card-header">\n`
-      content += `<h3 class="card-title"><a href="${sectionUrl}" class="category-link">${sectionTitle}</a></h3>\n`
-      content += `</div>\n`
-
-      const allItems = []
-
-      structure.subfolderCards.forEach(subfolder => {
-        allItems.push({
-          type: 'folder',
-          name: subfolder.name,
-          url: this.normalizePath(sectionUrl, subfolder.path)
-        })
-      })
-
-      structure.articles.forEach(article => {
-        const articlePath = this.isIndexArticle(article.path, structure.name) ? '' : article.path
-        allItems.push({
-          type: 'article',
-          name: article.name,
-          url: this.normalizePath(sectionUrl, articlePath)
-        })
-      })
-
-      if (allItems.length > 0) {
-        content += `<ul class="card-article-list">\n`
-        for (const item of allItems) {
-          content += `<li><a href="${item.url}" class="article-link">${item.name}</a></li>\n`
-        }
-        content += `</ul>\n`
-      }
-
-      content += `</div>\n`
-
-      if (sectionImage) {
-        content += `<div class="card-image-container">\n`
-        content += `<img src="${sectionImage}" alt="${sectionTitle}" class="card-image" />\n`
-        content += `</div>\n`
-      }
-
-      content += `</div>\n`
-    }
-
-    content += '\n</div>\n'
-
-    console.log(' Обновление главной страницы...')
-    return await this.createOrUpdatePage(
-      wikiPath,
-      title,
-      content,
-      'Главная страница документации Kroks',
-      ['kroks', 'docs', 'index'],
-      locale
-    )
-  }
-
+  // ИЗМЕНЕНО: Удален вызов generateMainIndexPage
   async generateAll(docsFolder, baseWikiPath, locale) {
     console.log('═══════════════════════════════════════')
-    console.log('  Генерация всех разделов документации')
+    console.log('  Генерация статей документации')
+    console.log('  (Главная страница и страницы разделов НЕ создаются)')
     console.log('═══════════════════════════════════════')
 
     const sections = await this.getAllSections(docsFolder)
@@ -717,18 +509,14 @@ class KroksWikiGenerator {
       totalFail += result.failCount
     }
 
-    const mainSuccess = await this.generateMainIndexPage(sections, baseWikiPath, locale)
-    if (mainSuccess) totalSuccess++
-    else totalFail++
-
     console.log('\n═══════════════════════════════════════')
-    console.log(`  Итого: ${totalSuccess} успешно, ${totalFail} с ошибками`)
+    console.log(`  Итого: ${totalSuccess} статей успешно, ${totalFail} с ошибками`)
     console.log('═══════════════════════════════════════')
   }
 
   async generateSingleSection(sectionName, docsFolder, baseWikiPath, locale) {
     console.log('═══════════════════════════════════════')
-    console.log(`  Генерация раздела: ${sectionName}`)
+    console.log(`  Генерация раздела: ${sectionName} (только статьи)`)
     console.log('═══════════════════════════════════════')
 
     const sectionPath = path.join(docsFolder, sectionName)
