@@ -48,10 +48,10 @@
       v-container.grey.pa-0(fluid, :class='$vuetify.theme.dark ? `darken-4-l3` : `lighten-4`')
         v-row.page-header-section(no-gutters, align-content='center', style='height: 90px;')
           v-col.page-col-content.is-page-header(
-            :offset-xl='tocPosition === `left` ? 2 : 0'
-            :offset-lg='tocPosition === `left` ? 3 : 0'
-            :xl='tocPosition === `right` ? 10 : false'
-            :lg='tocPosition === `right` ? 9 : false'
+            :offset-xl='!isSection && tocPosition === `left` ? 2 : 0'
+            :offset-lg='!isSection && tocPosition === `left` ? 3 : 0'
+            :xl='!isSection && tocPosition === `right` ? 10 : false'
+            :lg='!isSection && tocPosition === `right` ? 9 : false'
             style='margin-top: auto; margin-bottom: auto;'
             :class='$vuetify.rtl ? `pr-4` : `pl-4`'
             )
@@ -82,8 +82,9 @@
       v-divider
       v-container.pl-5.pt-4(fluid, grid-list-xl)
         v-layout(row)
+          // === ИЗМЕНЕНО: Скрываем всю левую панель в разделах (!isSection) ===
           v-flex.page-col-sd(
-            v-if='tocPosition !== `off` && $vuetify.breakpoint.lgAndUp'
+            v-if='!isSection && tocPosition !== `off` && $vuetify.breakpoint.lgAndUp'
             :order-xs1='tocPosition !== `right`'
             :order-xs2='tocPosition === `right`'
             lg3
@@ -188,10 +189,11 @@
                   span {{$t('common:page.printFormat')}}
                 v-spacer
 
+          // === ИЗМЕНЕНО: Основной контент растягивается на всю ширину в разделах ===
           v-flex.page-col-content(
             xs12
-            :lg9='tocPosition !== `off`'
-            :xl10='tocPosition !== `off`'
+            :lg9='!isSection && tocPosition !== `off`'
+            :xl10='!isSection && tocPosition !== `off`'
             :order-xs1='tocPosition === `right`'
             :order-xs2='tocPosition !== `right`'
             )
@@ -292,8 +294,39 @@
               span {{$t('common:page.editPage')}}
             v-alert.mb-5(v-if='!isPublished', color='red', outlined, icon='mdi-minus-circle', dense)
               .caption {{$t('common:page.unpublishedWarning')}}
-            .contents(ref='container')
+
+            // ==========================================================
+            // === ЛОГИКА РАЗДЕЛА (Отображается только если isSection === true) ===
+            // ==========================================================
+            v-container.pl-5.pt-4(fluid, grid-list-xl, v-if='isSection')
+              v-layout(row)
+                v-flex(xs12)
+                  v-card.mb-5.elevation-1
+                    v-card-title.headline
+                      v-icon.mr-3(color='orange') mdi-folder-open
+                      span Раздел: {{ sectionTitle }}
+                    v-card-text
+                      p.grey--text.mb-4 Выберите подраздел или статью из списка:
+                      v-list(two-line, rounded, tile)
+                        template(v-for='(subpage, index) in sectionPages')
+                          v-list-item(
+                            :key='subpage.path'
+                            :href='`/` + subpage.path'
+                            style='text-decoration: none; color: inherit; border-radius: 8px; margin-bottom: 8px; transition: background 0.2s;'
+                          )
+                            v-list-item-avatar
+                              v-icon(:color='subpage.isFolder ? "orange" : "blue"') {{ subpage.isFolder ? "mdi-folder" : "mdi-file-document-outline" }}
+                            v-list-item-content
+                              v-list-item-title(:class='$vuetify.theme.dark ? "white--text" : "grey--text text--darken-4"') {{ subpage.title }}
+                              v-list-item-subtitle {{ subpage.path }}
+                          v-divider(v-if='index < sectionPages.length - 1')
+                      v-alert(v-if='sectionPages.length === 0', type='info', text, outlined)
+                        | В этом разделе пока нет статей или подразделов.
+
+            // === СТАНДАРТНОЕ СОДЕРЖИМОЕ СТРАНИЦЫ (если это не раздел) ===
+            .contents(ref='container', v-if='!isSection')
               slot(name='contents')
+
             .comments-container#discussion(v-if='commentsEnabled && commentsPerms.read && !printView')
               .comments-header
                 v-icon.mr-2(dark) mdi-comment-text-outline
@@ -302,7 +335,7 @@
                 slot(name='comments')
 
     nav-footer
-    Footer // <--- ДОБАВЛЕНО: Ваш кастомный футер
+    Footer
     notify
     search-results
     v-fab-transition
@@ -328,7 +361,7 @@
 import { StatusIndicator } from 'vue-status-indicator'
 import Tabset from './tabset.vue'
 import NavSidebar from './nav-sidebar.vue'
-import Footer from '../../../components/Footer.vue' // <--- ДОБАВЛЕНО: Правильный путь к Footer.vue
+import Footer from '../../../components/Footer.vue'
 import Prism from 'prismjs'
 import mermaid from 'mermaid'
 import { get, sync } from 'vuex-pathify'
@@ -379,7 +412,7 @@ export default {
   components: {
     NavSidebar,
     StatusIndicator,
-    Footer // <--- ДОБАВЛЕНО: Регистрация компонента
+    Footer
   },
   props: {
     pageId: {
@@ -493,7 +526,12 @@ export default {
           }
         }
       },
-      winWidth: 0
+      winWidth: 0,
+      // === Данные для логики разделов ===
+      isSection: false,
+      sectionPages: [],
+      isLoadingSection: true,
+      allPages: []
     }
   },
   computed: {
@@ -549,6 +587,11 @@ export default {
       } else {
         return ''
       }
+    },
+    // === Вычисляемое свойство для заголовка раздела ===
+    sectionTitle() {
+      const parts = this.path.split('/').filter(Boolean)
+      return parts.length > 0 ? parts[parts.length - 1].replace(/-/g, ' ') : 'Раздел'
     }
   },
   created() {
@@ -583,7 +626,13 @@ export default {
       this.handleSideNavVisibility()
     }, 500))
 
-    Prism.highlightAllUnder(this.$refs.container)
+    // === Проверка, является ли текущая страница разделом ===
+    this.checkIfSection()
+
+    // Примечание: this.$refs.container может быть undefined, если это раздел, поэтому добавлена проверка
+    if (this.$refs.container) {
+      Prism.highlightAllUnder(this.$refs.container)
+    }
 
     mermaid.mermaidAPI.initialize({
       startOnLoad: true,
@@ -603,14 +652,15 @@ export default {
     }
 
     this.$nextTick(() => {
-      this.$refs.container.querySelectorAll(`a[href^="#"], a[href^="${window.location.href.replace(window.location.hash, '')}#"]`).forEach(el => {
-        el.onclick = ev => {
-          ev.preventDefault()
-          ev.stopPropagation()
-          this.$vuetify.goTo(decodeURIComponent(ev.currentTarget.hash), this.scrollOpts)
-        }
-      })
-
+      if (this.$refs.container) {
+        this.$refs.container.querySelectorAll(`a[href^="#"], a[href^="${window.location.href.replace(window.location.hash, '')}#"]`).forEach(el => {
+          el.onclick = ev => {
+            ev.preventDefault()
+            ev.stopPropagation()
+            this.$vuetify.goTo(decodeURIComponent(ev.currentTarget.hash), this.scrollOpts)
+          }
+        })
+      }
       window.boot.notify('page-ready')
     })
   },
@@ -673,6 +723,114 @@ export default {
       this.$vuetify.goTo('#discussion', this.scrollOpts)
       if (focusNewComment) {
         document.querySelector('#discussion-new').focus()
+      }
+    },
+    // === Методы для логики разделов ===
+    async checkIfSection() {
+      const currentPath = this.path.replace(/^\//, '').replace(/\/$/, '')
+
+      if (!currentPath || currentPath === 'home') {
+        this.isLoadingSection = false
+        return
+      }
+
+      try {
+        const response = await fetch('/graphql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: `query { pages { list(locale: "${this.locale}", limit: 500) { id path title } } }`
+          })
+        })
+
+        if (response.status === 200) {
+          const result = await response.json()
+          if (result.data?.pages?.list) {
+            this.allPages = result.data.pages.list
+            this.collectSectionContent(currentPath)
+          }
+        } else {
+          console.error('GraphQL ответил с ошибкой:', response.status)
+        }
+      } catch (e) {
+        console.error('❌ Ошибка при проверке раздела:', e)
+      } finally {
+        this.isLoadingSection = false
+      }
+    },
+
+    collectSectionContent(currentPath) {
+      const currentParts = currentPath.split('/').filter(Boolean)
+      const currentLevel = currentParts.length
+      const searchPrefix = currentPath + '/'
+      const addedPaths = new Set()
+      const sectionPagesMap = new Map()
+
+      this.allPages.forEach(page => {
+        if (!page.path.startsWith(searchPrefix)) return
+
+        const cleanPath = page.path.replace(/^\/+/, '')
+        const parts = cleanPath.split('/').filter(Boolean)
+        const pageLevel = parts.length
+        const expectedLevel = currentLevel + 1
+        let targetPath, targetTitle, isFolder
+
+        if (pageLevel === expectedLevel) {
+          targetPath = page.path
+          targetTitle = page.title || parts[parts.length - 1].replace(/-/g, ' ')
+          isFolder = false
+        } else if (pageLevel > expectedLevel) {
+          const targetParts = parts.slice(0, expectedLevel)
+          targetPath = targetParts.join('/')
+
+          const subSectionPage = this.allPages.find(p => {
+            const cleanP = p.path.replace(/^\/+/, '')
+            return cleanP === targetPath
+          })
+
+          if (subSectionPage) {
+            targetTitle = subSectionPage.title
+            isFolder = true
+          } else {
+            targetTitle = targetParts[targetParts.length - 1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+            isFolder = true
+          }
+        }
+
+        if (!addedPaths.has(targetPath)) {
+          addedPaths.add(targetPath)
+          sectionPagesMap.set(targetPath, {
+            title: targetTitle,
+            path: targetPath,
+            isFolder: isFolder
+          })
+        }
+      })
+
+      sectionPagesMap.forEach((item, path) => {
+        const hasChildren = this.allPages.some(p => {
+          const cleanP = p.path.replace(/^\/+/, '')
+          const parts = cleanP.split('/').filter(Boolean)
+          if (parts.length <= currentLevel + 1) return false
+          const itemParts = path.split('/').filter(Boolean)
+          return parts.slice(0, itemParts.length).join('/') === path
+        })
+
+        if (hasChildren) {
+          item.isFolder = true
+        }
+      })
+
+      this.sectionPages = Array.from(sectionPagesMap.values())
+      this.sectionPages.sort((a, b) => {
+        if (a.isFolder !== b.isFolder) {
+          return a.isFolder ? -1 : 1
+        }
+        return a.title.localeCompare(b.title, 'ru')
+      })
+
+      if (this.sectionPages.length > 0) {
+        this.isSection = true
       }
     }
   }
@@ -757,5 +915,11 @@ export default {
       }
     }
   }
+}
+
+.section-view {
+  min-height: 100vh;
+  padding-top: 64px;
+  padding-bottom: 100px !important;
 }
 </style>

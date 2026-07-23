@@ -75,10 +75,12 @@ export default {
       const map = {}
       const tree = []
 
+      // Сначала создаем все узлы
       pages.forEach(page => {
         if (!page.path || page.path === '/') return
 
-        const parts = page.path.split('/').filter(Boolean)
+        const cleanPath = page.path.replace(/^\/+/, '')
+        const parts = cleanPath.split('/').filter(Boolean)
         let currentPath = ''
 
         parts.forEach((part, index) => {
@@ -86,15 +88,37 @@ export default {
 
           if (!map[currentPath]) {
             const isLast = index === parts.length - 1
+
+            // ЛОГИКА ИЗ welcome.vue: ищем страницу для получения title
+            let nodeTitle
+
+            if (isLast) {
+              // Для последнего элемента берем title из текущей страницы
+              nodeTitle = page.title
+            } else {
+              // Для промежуточных элементов ищем соответствующую страницу
+              const sectionPage = pages.find(p => {
+                const cleanP = p.path.replace(/^\/+/, '')
+                return cleanP === currentPath.replace(/^\/+/, '')
+              })
+
+              if (sectionPage) {
+                nodeTitle = sectionPage.title
+              } else {
+                nodeTitle = this.formatTitle(part)
+              }
+            }
+
             map[currentPath] = {
               path: currentPath,
-              title: isLast ? page.title : this.formatTitle(part),
+              title: nodeTitle,
               children: []
             }
           }
         })
       })
 
+      // Затем строим дерево
       Object.values(map).forEach(node => {
         const parts = node.path.split('/').filter(Boolean)
         if (parts.length === 1) {

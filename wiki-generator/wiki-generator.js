@@ -13,7 +13,6 @@ class KroksWikiGenerator {
     this.wikiUrl = wikiUrl.replace(/\/$/, '')
     this.apiToken = apiToken
     this.graphqlEndpoint = `${this.wikiUrl}/graphql`
-
     this.headers = {
       'Authorization': `Bearer ${apiToken}`,
       'Content-Type': 'application/json'
@@ -22,10 +21,8 @@ class KroksWikiGenerator {
 
   ignoreDuplicateH1(content, title) {
     if (!title || !content) return content
-
     const escapedTitle = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const regex = new RegExp(`^\\s*#\\s+${escapedTitle}\\s*\\n+`, 'i')
-
     return content.replace(regex, '')
   }
 
@@ -45,31 +42,12 @@ class KroksWikiGenerator {
     const files = await fs.readdir(folderPath)
     const mdFiles = files.filter(file => file.endsWith('.md'))
 
-    const subfolders = new Set()
-    for (const file of files) {
-      const filePath = path.join(folderPath, file)
-      try {
-        const stat = await fs.stat(filePath)
-        if (stat.isDirectory()) {
-          subfolders.add(file)
-        }
-      } catch (e) {
-        // Игнорируем ошибки
-      }
-    }
-
     for (const file of mdFiles) {
-      const fileNameWithoutExt = path.basename(file, '.md')
-      if (subfolders.has(fileNameWithoutExt)) {
-        continue
-      }
-
       try {
         const filePath = path.join(folderPath, file)
         const content = await fs.readFile(filePath, 'utf8')
         const parsed = matter(content)
         const title = parsed.data.title || parsed.data.name || path.basename(file, '.md')
-
         articles.push({
           name: parsed.data.name || title,
           title: title,
@@ -94,11 +72,9 @@ class KroksWikiGenerator {
       if (entry.name === 'uploads') {
         continue
       }
-
       if (entry.isDirectory()) {
         const sectionPath = path.join(docsFolder, entry.name)
         const mdFiles = (await fs.readdir(sectionPath)).filter(f => f.endsWith('.md'))
-
         if (mdFiles.length > 0) {
           sections.push({
             name: entry.name,
@@ -120,9 +96,9 @@ class KroksWikiGenerator {
       articles: [],
       subfolders: []
     }
-
     const entries = await fs.readdir(folderPath, { withFileTypes: true })
 
+    // Собираем имена подпапок для фильтрации метафайлов
     const subfolderNames = new Set()
     for (const entry of entries) {
       if (entry.name === 'uploads') continue
@@ -131,12 +107,14 @@ class KroksWikiGenerator {
 
     for (const entry of entries) {
       if (entry.name === 'uploads') continue
-
       const entryPath = path.join(folderPath, entry.name)
 
       if (entry.isFile() && entry.name.endsWith('.md')) {
+        // ПРОПУСКАЕМ файлы, которые являются метафайлами подразделов
+        // (они будут обработаны через processSubfolderMetaFile)
         const fileNameWithoutExt = path.basename(entry.name, '.md')
         if (subfolderNames.has(fileNameWithoutExt)) {
+          console.log(`  ⏭️ Пропущен метафайл подраздела: ${entry.name} (будет обработан отдельно)`)
           continue
         }
 
@@ -144,7 +122,6 @@ class KroksWikiGenerator {
           const content = await fs.readFile(entryPath, 'utf8')
           const parsed = matter(content)
           const title = parsed.data.title || parsed.data.name || path.basename(entry.name, '.md')
-
           structure.articles.push({
             name: parsed.data.name || title,
             title: title,
@@ -166,38 +143,24 @@ class KroksWikiGenerator {
   }
 
   async createPage(pagePath, title, content, description = '', tags = [], locale = 'ru', isPublished = true, isPrivate = false, editor = 'markdown') {
-    const mutation = `
-      mutation CreatePage($content: String!, $description: String!, $editor: String!,
-                        $isPublished: Boolean!, $isPrivate: Boolean!, $locale: String!,
-                        $path: String!, $tags: [String]!, $title: String!) {
-        pages {
-          create(
-            content: $content,
-            description: $description,
-            editor: $editor,
-            isPublished: $isPublished,
-            isPrivate: $isPrivate,
-            locale: $locale,
-            path: $path,
-            tags: $tags,
-            title: $title
-          ) {
-            responseResult {
-              succeeded
-              errorCode
-              slug
-              message
-            }
-            page {
-              id
-              path
-              title
-            }
-          }
+    const mutation = `mutation CreatePage($content: String!, $description: String!, $editor: String!, $isPublished: Boolean!, $isPrivate: Boolean!, $locale: String!, $path: String!, $tags: [String]!, $title: String!) {
+      pages {
+        create(
+          content: $content,
+          description: $description,
+          editor: $editor,
+          isPublished: $isPublished,
+          isPrivate: $isPrivate,
+          locale: $locale,
+          path: $path,
+          tags: $tags,
+          title: $title
+        ) {
+          responseResult { succeeded errorCode slug message }
+          page { id path title }
         }
       }
-    `
-
+    }`
     const variables = {
       content,
       description,
@@ -209,7 +172,6 @@ class KroksWikiGenerator {
       tags,
       title
     }
-
     try {
       const response = await fetch(this.graphqlEndpoint, {
         method: 'POST',
@@ -229,37 +191,23 @@ class KroksWikiGenerator {
   }
 
   async updatePage(pageId, title, content, description = '', tags = [], locale = 'ru', isPublished = true, editor = 'markdown') {
-    const mutation = `
-      mutation UpdatePage($id: Int!, $content: String!, $description: String!,
-                        $editor: String!, $isPublished: Boolean!, $locale: String!,
-                        $tags: [String]!, $title: String!) {
-        pages {
-          update(
-            id: $id,
-            content: $content,
-            description: $description,
-            editor: $editor,
-            isPublished: $isPublished,
-            locale: $locale,
-            tags: $tags,
-            title: $title
-          ) {
-            responseResult {
-              succeeded
-              errorCode
-              slug
-              message
-            }
-            page {
-              id
-              path
-              title
-            }
-          }
+    const mutation = `mutation UpdatePage($id: Int!, $content: String!, $description: String!, $editor: String!, $isPublished: Boolean!, $locale: String!, $tags: [String]!, $title: String!) {
+      pages {
+        update(
+          id: $id,
+          content: $content,
+          description: $description,
+          editor: $editor,
+          isPublished: $isPublished,
+          locale: $locale,
+          tags: $tags,
+          title: $title
+        ) {
+          responseResult { succeeded errorCode slug message }
+          page { id path title }
         }
       }
-    `
-
+    }`
     const variables = {
       id: pageId,
       content,
@@ -303,7 +251,6 @@ class KroksWikiGenerator {
           }
         }
       `
-
       try {
         const response = await fetch(this.graphqlEndpoint, {
           method: 'POST',
@@ -313,9 +260,7 @@ class KroksWikiGenerator {
             variables: { path: testPath, locale }
           })
         })
-
         const result = await response.json()
-
         if (result.data && result.data.pages && result.data.pages.single) {
           return result.data.pages.single
         }
@@ -337,22 +282,18 @@ class KroksWikiGenerator {
           }
         }
       `
-
       const response = await fetch(this.graphqlEndpoint, {
         method: 'POST',
         headers: this.headers,
         body: JSON.stringify({ query: allPagesQuery })
       })
-
       const result = await response.json()
-
       if (result.data && result.data.pages && result.data.pages.list) {
         const normalizedPath = pagePath.replace(/^\//, '')
         const found = result.data.pages.list.find(p => {
           const pNormalized = p.path.replace(/^\//, '')
           return pNormalized === normalizedPath && p.locale === locale
         })
-
         if (found) {
           console.log(`    Найдена через список страниц: ${found.path} (ID: ${found.id})`)
           return { id: found.id, path: found.path, title: found.title }
@@ -361,16 +302,13 @@ class KroksWikiGenerator {
     } catch (error) {
       console.error('  HTTP ошибка при поиске:', error.message)
     }
-
     return null
   }
 
   async createOrUpdatePage(wikiPath, title, content, description = '', tags = [], locale = 'ru') {
     const existingPage = await this.getPageByPath(wikiPath, locale)
-
     if (existingPage) {
       console.log(`    Найдена существующая страница (ID: ${existingPage.id}). Обновление...`)
-
       const result = await this.updatePage(
         existingPage.id,
         title,
@@ -379,7 +317,6 @@ class KroksWikiGenerator {
         tags,
         locale
       )
-
       if (result && result.data && result.data.pages.update && result.data.pages.update.responseResult.succeeded) {
         console.log(`    Страница успешно обновлена: ${wikiPath}`)
         return true
@@ -388,10 +325,8 @@ class KroksWikiGenerator {
         return false
       }
     }
-
     console.log(`   ➕ Создание новой страницы`)
     const result = await this.createPage(wikiPath, title, content, description, tags, locale)
-
     if (result && result.data && result.data.pages.create) {
       const pageData = result.data.pages.create
       if (pageData.responseResult.succeeded) {
@@ -409,14 +344,12 @@ class KroksWikiGenerator {
 
   async createArticlePage(article, wikiPath, sectionName, locale) {
     console.log(`\n📄 Статья: ${article.name}`)
-    console.log(`   Путь: ${wikiPath}`)
-
+    console.log(`Путь: ${wikiPath}`)
     const fullContent = article.content
     const description = (article.description || '').length > 240 ?
       (article.description || '').substring(0, 240) + '...' :
       article.description || ''
     const tags = ['kroks', 'docs', sectionName, ...(article.tags || [])]
-
     return await this.createOrUpdatePage(
       wikiPath,
       article.title,
@@ -427,61 +360,141 @@ class KroksWikiGenerator {
     )
   }
 
-  // ИЗМЕНЕНО: Теперь обрабатывает ТОЛЬКО статьи, игнорируя создание страниц разделов
+  async processSubfolderMetaFile(subfolder, baseWikiPath, sectionName, locale) {
+    const subfolderPath = subfolder.path
+    const subfolderName = subfolder.name
+    const parentFolder = path.dirname(subfolderPath)
+    const metaFilePath = path.join(parentFolder, `${subfolderName}.md`)
+
+    let metaSuccess = false
+    try {
+      await fs.access(metaFilePath)
+      console.log(`\n   Метафайл подраздела: ${subfolderName}.md`)
+      const content = await fs.readFile(metaFilePath, 'utf8')
+      const parsed = matter(content)
+      const title = parsed.data.title || parsed.data.name || subfolderName
+      const description = (parsed.data.description || parsed.data.summary || '')
+      const tags = ['kroks', 'docs', sectionName, ...(parsed.data.tags || [])]
+      // Для метафайлов НЕ удаляем дублирующийся H1
+      const fullContent = parsed.content
+
+      const targetWikiPath = this.normalizePath(baseWikiPath, subfolderName)
+
+      metaSuccess = await this.createOrUpdatePage(
+        targetWikiPath,
+        title,
+        fullContent,
+        description,
+        tags,
+        locale
+      )
+      console.log(metaSuccess
+        ? `    ✅ Метафайл подраздела "${subfolderName}" перенесён → ${targetWikiPath}`
+        : `     Ошибка переноса метафайла "${subfolderName}"`)
+    } catch {
+      console.log(`\n    ⚠️ Метафайл "${subfolderName}.md" не найден — страница подраздела не создаётся`)
+    }
+
+    return metaSuccess
+  }
+
   async processFolderStructure(structure, baseWikiPath, sectionName, locale) {
     let successCount = 0
     let failCount = 0
-
     const folderWikiPath = baseWikiPath
 
-    // 1. Создаем/обновляем только статьи в текущей папке
+    // 1. Создаем/обновляем статьи в текущей папке
     for (const article of structure.articles) {
       const articlePath = this.isIndexArticle(article.path, structure.name) ? '' : article.path
       const articleWikiPath = this.normalizePath(folderWikiPath, articlePath)
-
       const articleSuccess = await this.createArticlePage(
         article,
         articleWikiPath,
         sectionName,
         locale
       )
-
       if (articleSuccess) successCount++
       else failCount++
     }
 
     // 2. Рекурсивно обрабатываем вложенные папки
     for (const subfolder of structure.subfolders) {
+      // Сначала обрабатываем метафайл подраздела (если есть)
+      const metaSuccess = await this.processSubfolderMetaFile(
+        subfolder,
+        baseWikiPath,
+        sectionName,
+        locale
+      )
+
+      // Затем рекурсивно обрабатываем содержимое подраздела
       const subResult = await this.processFolderStructure(
         subfolder,
         this.normalizePath(baseWikiPath, subfolder.name),
         sectionName,
         locale
       )
-      successCount += subResult.successCount
+
+      successCount += subResult.successCount + (metaSuccess ? 1 : 0)
       failCount += subResult.failCount
     }
-
     return { successCount, failCount }
   }
 
   async generateSectionPage(sectionName, sectionPath, baseWikiPath, locale) {
     console.log(`\n═══════════════════════════════════════`)
-    console.log(`  Обработка раздела: ${sectionName} (только статьи)`)
+    console.log(`Обработка раздела: ${sectionName}`)
     console.log(`═══════════════════════════════════════`)
 
     const docsFolder = path.dirname(sectionPath)
-    const structure = await this.getFolderStructure(sectionPath, sectionName)
     const targetWikiPath = this.normalizePath(baseWikiPath, sectionName)
 
-    return await this.processFolderStructure(structure, targetWikiPath, sectionName, locale)
+    // ══════════════════════════════════════════════════
+    // Обработка метафайла раздела (одноимённый .md)
+    // Сохраняем контент БЕЗ очистки H1 заголовка
+    // ═══════════════════════════════════════════════════
+    const metaFilePath = path.join(docsFolder, `${sectionName}.md`)
+    let metaSuccess = false
+    try {
+      await fs.access(metaFilePath)
+      console.log(`\n Метафайл раздела: ${sectionName}.md`)
+      const content = await fs.readFile(metaFilePath, 'utf8')
+      const parsed = matter(content)
+      const title = parsed.data.title || parsed.data.name || sectionName
+      const description = (parsed.data.description || parsed.data.summary || '')
+      const tags = ['kroks', 'docs', sectionName, ...(parsed.data.tags || [])]
+      // ВАЖНО: Для метафайлов разделов НЕ удаляем дублирующийся H1
+      const fullContent = parsed.content
+
+      metaSuccess = await this.createOrUpdatePage(
+        targetWikiPath,
+        title,
+        fullContent,
+        description,
+        tags,
+        locale
+      )
+      console.log(metaSuccess
+        ? `  ✅ Метафайл раздела "${sectionName}" перенесён → ${targetWikiPath}`
+        : `   Ошибка переноса метафайла "${sectionName}"`)
+    } catch {
+      console.log(`\n  ️ Метафайл "${sectionName}.md" не найден — страница раздела не создаётся`)
+    }
+    // ══════════════════════════════════════════════════
+
+    // Обработка статей внутри папки раздела
+    const structure = await this.getFolderStructure(sectionPath, sectionName)
+    const result = await this.processFolderStructure(structure, targetWikiPath, sectionName, locale)
+
+    // Добавляем успех метафайла в общую статистику
+    result.successCount += metaSuccess ? 1 : 0
+
+    return result
   }
 
-  // ИЗМЕНЕНО: Удален вызов generateMainIndexPage
   async generateAll(docsFolder, baseWikiPath, locale) {
     console.log('═══════════════════════════════════════')
-    console.log('  Генерация статей документации')
-    console.log('  (Главная страница и страницы разделов НЕ создаются)')
+    console.log('  Генерация документации (с метафайлами разделов)')
     console.log('═══════════════════════════════════════')
 
     const sections = await this.getAllSections(docsFolder)
@@ -504,27 +517,25 @@ class KroksWikiGenerator {
         baseWikiPath,
         locale
       )
-
       totalSuccess += result.successCount
       totalFail += result.failCount
     }
 
     console.log('\n═══════════════════════════════════════')
-    console.log(`  Итого: ${totalSuccess} статей успешно, ${totalFail} с ошибками`)
+    console.log(`  Итого: ${totalSuccess} страниц успешно, ${totalFail} с ошибками`)
     console.log('═══════════════════════════════════════')
   }
 
   async generateSingleSection(sectionName, docsFolder, baseWikiPath, locale) {
     console.log('═══════════════════════════════════════')
-    console.log(`  Генерация раздела: ${sectionName} (только статьи)`)
+    console.log(`Генерация раздела: ${sectionName}`)
     console.log('═══════════════════════════════════════')
 
     const sectionPath = path.join(docsFolder, sectionName)
-
     try {
       await fs.access(sectionPath)
     } catch {
-      console.error(`\n Папка не найдена: ${sectionPath}`)
+      console.error(`\n❌ Папка не найдена: ${sectionPath}`)
       return
     }
 
@@ -536,17 +547,15 @@ async function main() {
   const wikiUrl = process.env.WIKI_URL
   const apiToken = process.env.API_TOKEN
   const docsFolder = process.env.DOCS_FOLDER || path.join(__dirname, 'kroks-docs')
-
   const baseWikiPath = process.env.BASE_WIKI_PATH || '/'
   const locale = process.env.LOCALE || 'ru'
 
   if (!wikiUrl || !apiToken) {
-    console.error(' Укажите WIKI_URL и API_TOKEN в файле .env')
+    console.error('❌ Укажите WIKI_URL и API_TOKEN в файле .env')
     process.exit(1)
   }
 
   const generator = new KroksWikiGenerator(wikiUrl, apiToken)
-
   const args = process.argv.slice(2)
 
   if (args.includes('--all')) {
